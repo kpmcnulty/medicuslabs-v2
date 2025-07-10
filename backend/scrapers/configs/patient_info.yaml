@@ -1,0 +1,64 @@
+site_name: "Patient.info"
+base_url: "https://patient.info"
+source_id: 4  # Will be set in database
+requires_js: false
+rate_limit: 0.5  # 2 requests per second
+
+selectors:
+  # Search and listing pages
+  search_url: "/forums/search?query={query}"
+  post_list: "div.discussion-list article"
+  post_title: "h3.discussion-title a"
+  post_url: "h3.discussion-title a@href"
+  post_author: "span.author-name"
+  post_date: "time.post-time@datetime"
+  post_preview: "div.discussion-summary"
+  
+  # Full post page
+  post_content: "div.post-content"
+  
+  # Comments/Replies
+  comments_container: "div.replies-container"
+  comment_item: "article.reply"
+  comment_author: "span.reply-author"
+  comment_date: "time.reply-time@datetime"
+  comment_text: "div.reply-content"
+  
+  # Pagination
+  next_page: "a.pagination-next@href"
+
+extraction_rules:
+  date_format: "%Y-%m-%d %H:%M:%S"
+  url_prefix: "https://patient.info"
+  
+  # Fields to extract from post metadata
+  extract_fields:
+    - category: "span.discussion-category"
+    - replies_count: "span.reply-count"
+    - helpful_count: "span.helpful-count"
+    - forum_section: "nav.breadcrumb li:last-child"
+
+# Medical forums categories to prioritize
+priority_categories:
+  - "Conditions & Diseases"
+  - "Treatments & Medications"
+  - "Symptoms"
+  - "Mental Health"
+  - "Women's Health"
+  - "Men's Health"
+  - "Children's Health"
+
+# Simple filter keywords (optional)
+filter_keywords:
+  - symptoms
+  - treatment
+  - medication
+  - diagnosis
+  - GP
+  - doctor
+  - NHS
+  - prescribed
+  - condition
+  - pain
+  - health
+min_keyword_matches: 1

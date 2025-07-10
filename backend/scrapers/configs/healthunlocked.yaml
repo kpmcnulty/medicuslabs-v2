@@ -1,0 +1,58 @@
+site_name: "HealthUnlocked"
+base_url: "https://healthunlocked.com"
+source_id: 3  # Will be set in database
+requires_js: true
+rate_limit: 0.5  # 2 requests per second
+
+selectors:
+  # Search and listing pages
+  search_url: "/search?q={query}&type=posts"
+  post_list: "article.post-card"
+  post_title: "h2.post-card__title a"
+  post_url: "h2.post-card__title a@href"
+  post_author: "span.post-card__author-name"
+  post_date: "time.post-card__time@datetime"
+  post_preview: "div.post-card__excerpt"
+  
+  # Full post page
+  wait_for: "div.post__content"
+  post_content: "div.post__content"
+  
+  # Comments
+  comments_container: "div.comments-section"
+  comment_item: "article.comment"
+  comment_author: "span.comment__author-name"
+  comment_date: "time.comment__time@datetime"
+  comment_text: "div.comment__content"
+  
+  # Pagination
+  next_page: "a.pagination__next@href"
+
+extraction_rules:
+  date_format: "%Y-%m-%dT%H:%M:%S"
+  url_prefix: "https://healthunlocked.com"
+  
+  # Fields to extract from post metadata
+  extract_fields:
+    - likes_count: "span.post-stats__likes"
+    - replies_count: "span.post-stats__replies"
+    - views_count: "span.post-stats__views"
+    - tags: "a.post-tag"
+    - community: "a.post-card__community-name"
+
+# Simple filter keywords (optional pre-filtering)
+# Posts must contain at least min_keyword_matches of these
+filter_keywords:
+  - symptoms
+  - treatment
+  - medication
+  - diagnosis
+  - doctor
+  - hospital
+  - disease
+  - condition
+  - therapy
+  - pain
+  - health
+  - medical
+min_keyword_matches: 1  # Must have at least 1 medical keyword

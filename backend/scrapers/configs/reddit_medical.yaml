@@ -1,0 +1,91 @@
+site_name: "Reddit Medical Communities"
+base_url: "https://www.reddit.com"
+source_id: 5  # Will be set in database
+requires_js: true  # Reddit requires JS for full content
+rate_limit: 0.3  # Slower rate for Reddit
+
+selectors:
+  # Search - using subreddit search
+  search_url: "/r/AskDocs+medical+Health+chronicpain+ChronicIllness/search?q={query}&restrict_sr=1&sort=relevance&t=all"
+  
+  # Post listing
+  post_list: "div[data-testid='post-container']"
+  post_title: "h3"
+  post_url: "a[data-click-id='body']@href"
+  post_author: "a[href*='/user/']"
+  post_date: "time@datetime"
+  post_preview: "div[data-click-id='text'] p"
+  
+  # Full post page
+  wait_for: "div[data-test-id='post-content']"
+  post_content: "div[data-test-id='post-content']"
+  
+  # Comments
+  comments_container: "div[style*='--commentDepth:0']"
+  comment_item: "div[data-testid='comment']"
+  comment_author: "a[href*='/user/']"
+  comment_date: "time@datetime"
+  comment_text: "div[data-testid='comment'] > div:nth-child(2)"
+  
+  # Pagination
+  next_page: "a[rel='next']@href"
+
+extraction_rules:
+  date_format: "%Y-%m-%dT%H:%M:%S"
+  url_prefix: "https://www.reddit.com"
+  
+  # Fields to extract
+  extract_fields:
+    - upvotes: "div[aria-label*='upvote'] + div"
+    - comment_count: "span[aria-label*='comments']"
+    - subreddit: "a[data-click-id='subreddit']"
+    - flair: "span[class*='flair']"
+    - awards: "div[aria-label='Awards']"
+
+# Medical subreddits to search
+medical_subreddits:
+  - AskDocs
+  - medical
+  - Health
+  - chronicpain
+  - ChronicIllness
+  - lupus
+  - diabetes
+  - cancer
+  - mentalhealth
+  - Anxiety
+  - depression
+  - ADHD
+  - autism
+  - migraine
+  - IBS
+  - CrohnsDisease
+  - MultipleSclerosis
+  - rheumatoid
+  - Fibromyalgia
+
+# Post flairs that indicate medical relevance
+relevant_flairs:
+  - "Physician Responded"
+  - "Medical Question"
+  - "Seeking Advice"
+  - "Personal Experience"
+  - "Treatment"
+  - "Diagnosis"
+  - "Medication"
+
+# Simple filter keywords
+filter_keywords:
+  - diagnosed
+  - symptoms
+  - treatment
+  - medication
+  - doctor
+  - hospital
+  - prescription
+  - pain
+  - disease
+  - condition
+  - medical
+  - health
+min_keyword_matches: 2  # Reddit has more noise, require 2 keywords

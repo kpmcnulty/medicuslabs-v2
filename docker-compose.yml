@@ -1,0 +1,149 @@
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: medical_data_postgres
+    environment:
+      POSTGRES_DB: medical_data
+      POSTGRES_USER: ${DB_USER:-medical_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-medical_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-medical_user} -d medical_data"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+  redis:
+    image: redis:alpine
+    container_name: medical_data_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_pass}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medical_data_api
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-medical_user}:${DB_PASSWORD:-medical_pass}@postgres:5432/medical_data
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./backend:/app
+      - /data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery_worker:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A tasks.celery_app worker --loglevel=${LOG_LEVEL:-info} --concurrency=4
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-medical_user}:${DB_PASSWORD:-medical_pass}@postgres:5432/medical_data
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+    volumes:
+      - ./backend:/app
+      - /data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medical_data_celery_beat
+    command: celery -A tasks.celery_app beat --loglevel=${LOG_LEVEL:-info}
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-medical_user}:${DB_PASSWORD:-medical_pass}@postgres:5432/medical_data
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: medical_data_frontend
+    environment:
+      REACT_APP_API_URL: ${API_URL:-http://localhost:8000}
+      NODE_ENV: ${NODE_ENV:-development}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    command: npm start
+
+  nginx:
+    image: nginx:alpine
+    container_name: medical_data_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - api
+      - frontend
+
+  flower:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medical_data_flower
+    command: celery -A tasks.celery_app flower --port=5555
+    environment:
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-redis_pass}@redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+
+networks:
+  default:
+    name: medical_data_network
+
+volumes:
+  postgres_data:
+  redis_data:
