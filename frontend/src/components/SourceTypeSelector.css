@@ -151,3 +151,21 @@
   border-radius: 4px;
   margin-top: 16px;
 }
+
+.loading-message,
+.no-sources-message {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-size: 16px;
+}
+
+.loading-message {
+  color: #2196F3;
+}
+
+.no-sources-message {
+  color: #999;
+  background: #f5f5f5;
+  border-radius: 8px;
+}

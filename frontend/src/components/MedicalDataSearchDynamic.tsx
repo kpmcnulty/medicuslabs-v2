@@ -14,7 +14,7 @@ interface SearchState {
 const MedicalDataSearchDynamic: React.FC = () => {
   const [searchState, setSearchState] = useState<SearchState>({
     query: '',
-    sourceTypes: ['publications', 'trials'],
+    sourceTypes: [],  // Start with no sources selected to prevent auto-search on load
     disease: null,
     metadataFilters: {}
   });
@@ -39,19 +39,17 @@ const MedicalDataSearchDynamic: React.FC = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/search/advanced`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/search/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          q: searchState.query || undefined,
-          source_types: searchState.sourceTypes.length > 0 ? searchState.sourceTypes : undefined,
-          disease: searchState.disease || undefined,
+          query: searchState.query || undefined,
+          categories: searchState.sourceTypes.length > 0 ? searchState.sourceTypes : undefined,
           metadata_filters: Object.keys(searchState.metadataFilters).length > 0 ? searchState.metadataFilters : undefined,
-          limit: pageSize,
-          offset: (currentPage - 1) * pageSize,
-          dynamic_columns: true
+          page: currentPage,
+          page_size: pageSize
         }),
       });
 
@@ -60,10 +58,18 @@ const MedicalDataSearchDynamic: React.FC = () => {
       }
 
       const data = await response.json();
-      setResults(data.results);
-      setColumns(data.columns);
-      setTotalResults(data.total);
-      setSourceBreakdown(data.source_breakdown || {});
+      setResults(data.results || []);
+      setColumns(data.columns || []);  // Use columns from API response
+      setTotalResults(data.total || 0);
+      
+      // Calculate source breakdown from facets
+      const breakdown: Record<string, number> = {};
+      if (data.facets && data.facets.sources) {
+        data.facets.sources.forEach((facet: any) => {
+          breakdown[facet.value] = facet.count;
+        });
+      }
+      setSourceBreakdown(breakdown);
     } catch (err) {
       console.error('Search error:', err);
       setError('Failed to perform search. Please try again.');
@@ -73,9 +79,10 @@ const MedicalDataSearchDynamic: React.FC = () => {
     }
   }, [searchState, currentPage]);
 
-  // Auto-search when filters change
+  // Auto-search when filters change (but not on initial load with no filters)
   useEffect(() => {
-    if (searchState.query || searchState.disease || searchState.sourceTypes.length > 0) {
+    // Only perform search if user has entered something
+    if (searchState.query || searchState.disease || (searchState.sourceTypes.length > 0 && searchState.sourceTypes.length < 3)) {
       const debounceTimer = setTimeout(() => {
         performSearch();
       }, 500);

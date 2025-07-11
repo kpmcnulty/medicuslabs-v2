@@ -33,6 +33,10 @@ class Source(Base):
     last_crawled = Column(DateTime)
     last_crawled_id = Column(Text)
     crawl_state = Column(JSON, default={})
+    category = Column(String(50))
+    rate_limit = Column(Integer, default=10)
+    requires_auth = Column(Boolean, default=False)
+    scraper_type = Column(String(100))
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     

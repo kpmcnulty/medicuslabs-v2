@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import scrapers, search, search_enhanced, metadata, search_advanced
+from api import scrapers, metadata, search
 
 app = FastAPI(title="Medical Data API", version="0.1.0")
 
@@ -15,10 +15,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(scrapers.router)
-app.include_router(search.router)
-app.include_router(search_enhanced.router)
 app.include_router(metadata.router)
-app.include_router(search_advanced.router)
+app.include_router(search.router)
 
 @app.get("/health")
 async def health_check():

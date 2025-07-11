@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import './SourceTypeSelector.css';
 
 export interface SourceType {
@@ -10,44 +10,98 @@ export interface SourceType {
   color: string;
 }
 
+interface SourceData {
+  id: number;
+  name: string;
+  type: string;
+  category: string;
+  document_count: number;
+  rate_limit: number;
+  requires_auth: boolean;
+  scraper_type: string;
+}
+
 interface SourceTypeSelectorProps {
   selectedTypes: string[];
   onSelectionChange: (types: string[]) => void;
   loading?: boolean;
 }
 
-const SOURCE_TYPES: SourceType[] = [
-  {
-    id: 'publications',
+// Category metadata will be populated from API response
+const CATEGORY_METADATA: Record<string, { label: string; icon: string; description: string; color: string }> = {
+  publications: {
     label: 'Publications',
     icon: '📚',
-    sources: ['PubMed'],
     description: 'Peer-reviewed medical literature and research papers',
     color: '#2196F3'
   },
-  {
-    id: 'trials',
+  trials: {
     label: 'Clinical Trials',
     icon: '🧪',
-    sources: ['ClinicalTrials.gov'],
     description: 'Ongoing and completed clinical research studies',
     color: '#4CAF50'
   },
-  {
-    id: 'secondary',
+  community: {
     label: 'Community',
     icon: '👥',
-    sources: ['Reddit Medical', 'HealthUnlocked', 'Patient.info Forums'],
     description: 'Patient experiences and community discussions',
     color: '#FF9800'
   }
-];
+};
 
 const SourceTypeSelector: React.FC<SourceTypeSelectorProps> = ({
   selectedTypes,
   onSelectionChange,
   loading = false
 }) => {
+  const [sourceTypes, setSourceTypes] = useState<SourceType[]>([]);
+  const [fetchingData, setFetchingData] = useState(false);
+
+  // Fetch source data from API and build dynamic source types
+  useEffect(() => {
+    const fetchSourceData = async () => {
+      setFetchingData(true);
+      try {
+        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/scrapers/sources/by-category`);
+        if (response.ok) {
+          const sourcesByCategory: Record<string, SourceData[]> = await response.json();
+          
+          // Build source types from API response
+          const types: SourceType[] = [];
+          
+          Object.entries(sourcesByCategory).forEach(([category, sources]) => {
+            const metadata = CATEGORY_METADATA[category];
+            if (metadata && sources.length > 0) {
+              const totalDocs = sources.reduce((sum, s) => sum + s.document_count, 0);
+              types.push({
+                id: category,
+                label: metadata.label,
+                icon: metadata.icon,
+                sources: sources.map(s => s.name),
+                description: metadata.description,
+                color: metadata.color,
+                documentCount: totalDocs
+              } as SourceType & { documentCount: number });
+            }
+          });
+          
+          // Sort by category order
+          types.sort((a, b) => {
+            const order = ['publications', 'trials', 'community'];
+            return order.indexOf(a.id) - order.indexOf(b.id);
+          });
+          
+          setSourceTypes(types);
+        }
+      } catch (error) {
+        console.error('Failed to fetch source data:', error);
+      } finally {
+        setFetchingData(false);
+      }
+    };
+
+    fetchSourceData();
+  }, []);
   const handleTypeClick = (typeId: string) => {
     if (loading) return;
     
@@ -66,11 +120,11 @@ const SourceTypeSelector: React.FC<SourceTypeSelectorProps> = ({
       onSelectionChange([]);
     } else {
       // Select all
-      onSelectionChange(SOURCE_TYPES.map(t => t.id));
+      onSelectionChange(sourceTypes.map(t => t.id));
     }
   };
 
-  const isAllSelected = selectedTypes.length === SOURCE_TYPES.length;
+  const isAllSelected = selectedTypes.length === sourceTypes.length && sourceTypes.length > 0;
 
   return (
     <div className="source-type-selector">
@@ -86,9 +140,14 @@ const SourceTypeSelector: React.FC<SourceTypeSelectorProps> = ({
       </div>
       
       <div className="source-type-grid">
-        {SOURCE_TYPES.map(type => {
-          const isSelected = selectedTypes.includes(type.id);
-          const documentCount = 0; // TODO: Get from API
+        {fetchingData ? (
+          <div className="loading-message">Loading source data...</div>
+        ) : sourceTypes.length === 0 ? (
+          <div className="no-sources-message">No sources available</div>
+        ) : (
+          sourceTypes.map(type => {
+            const isSelected = selectedTypes.includes(type.id);
+            const documentCount = (type as any).documentCount || 0;
           
           return (
             <div
@@ -127,7 +186,8 @@ const SourceTypeSelector: React.FC<SourceTypeSelectorProps> = ({
               </div>
             </div>
           );
-        })}
+          })
+        )}
       </div>
       
       {selectedTypes.length === 0 && (

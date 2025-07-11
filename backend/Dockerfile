@@ -6,13 +6,15 @@ RUN apt-get update && apt-get install -y \
     g++ \
     postgresql-client \
     curl \
+    wget \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
 # Copy requirements first for better caching
-COPY requirements-minimal.txt requirements.txt
+COPY requirements.txt requirements.txt
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt

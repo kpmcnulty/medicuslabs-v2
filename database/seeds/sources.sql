@@ -1,17 +1,13 @@
--- Simple source seed data for medical data aggregation platform
--- This replaces the overcomplicated YAML configuration with straightforward SQL
+-- Source seed data for medical data aggregation platform
+-- Includes categories and configuration for each source
 
 -- Primary sources (structured data)
-INSERT INTO sources (name, type, base_url, description) VALUES
-('ClinicalTrials.gov', 'primary', 'https://clinicaltrials.gov', 'Official registry of clinical research studies'),
-('PubMed', 'primary', 'https://pubmed.ncbi.nlm.nih.gov', 'Peer-reviewed medical literature database'),
-('Cochrane Library', 'primary', 'https://www.cochranelibrary.com', 'Systematic reviews and evidence synthesis'),
-('FDA FAERS', 'primary', 'https://www.fda.gov/drugs/surveillance/faers', 'Adverse event reporting system');
+INSERT INTO sources (name, type, base_url, category, rate_limit, requires_auth, scraper_type) VALUES
+('PubMed', 'primary', 'https://pubmed.ncbi.nlm.nih.gov', 'publications', 10, false, 'pubmed_api'),
+('ClinicalTrials.gov', 'primary', 'https://clinicaltrials.gov', 'trials', 10, false, 'clinicaltrials_api');
 
--- Secondary sources (unstructured data)
-INSERT INTO sources (name, type, base_url, description) VALUES
-('HealthUnlocked', 'secondary', 'https://healthunlocked.com', 'Patient community and support forums'),
-('Patient.info Forums', 'secondary', 'https://patient.info/forums', 'Medical Q&A and patient discussions'),
-('PatientsLikeMe', 'secondary', 'https://www.patientslikeme.com', 'Patient experience and treatment tracking'),
-('Reddit Medical', 'secondary', 'https://www.reddit.com/r/medical', 'Medical discussion communities'),
-('Medical Blogs', 'secondary', 'https://various-medical-blogs.com', 'Healthcare professional and patient blogs');
+-- Secondary sources (unstructured data from communities)
+INSERT INTO sources (name, type, base_url, category, rate_limit, requires_auth, scraper_type) VALUES
+('Reddit Medical', 'secondary', 'https://www.reddit.com', 'community', 60, false, 'reddit_scraper'),
+('HealthUnlocked', 'secondary', 'https://healthunlocked.com', 'community', 30, false, 'web_scraper'),
+('Patient.info Forums', 'secondary', 'https://patient.info/forums', 'community', 30, false, 'web_scraper');

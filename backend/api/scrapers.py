@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from typing import List, Dict, Any
 from loguru import logger
 
@@ -127,16 +127,74 @@ async def trigger_full_check():
         status="started"
     )
 
-@router.get("/sources", response_model=List[SourceResponse])
+@router.get("/sources", response_model=List[Dict[str, Any]])
 async def list_sources(db: AsyncSession = Depends(get_db)):
-    """List all available sources"""
+    """List all available sources with document counts"""
     
-    result = await db.execute(
-        select(Source).where(Source.is_active == True)
-    )
-    sources = result.scalars().all()
+    # Query to get sources with document counts
+    query = text("""
+        SELECT 
+            s.id,
+            s.name,
+            s.type,
+            s.base_url,
+            s.config,
+            s.is_active,
+            s.last_crawled,
+            s.category,
+            s.rate_limit,
+            s.requires_auth,
+            s.scraper_type,
+            s.created_at,
+            s.updated_at,
+            COUNT(d.id) as document_count
+        FROM sources s
+        LEFT JOIN documents d ON s.id = d.source_id
+        WHERE s.is_active = true
+        GROUP BY s.id
+        ORDER BY s.category, s.name
+    """)
     
-    return [SourceResponse.model_validate(source) for source in sources]
+    result = await db.execute(query)
+    sources = []
+    
+    for row in result:
+        source_dict = {
+            "id": row.id,
+            "name": row.name,
+            "type": row.type,
+            "base_url": row.base_url,
+            "config": row.config,
+            "is_active": row.is_active,
+            "last_crawled": row.last_crawled,
+            "category": row.category,
+            "rate_limit": row.rate_limit,
+            "requires_auth": row.requires_auth,
+            "scraper_type": row.scraper_type,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+            "document_count": row.document_count
+        }
+        sources.append(source_dict)
+    
+    return sources
+
+@router.get("/sources/by-category", response_model=Dict[str, List[Dict[str, Any]]])
+async def list_sources_by_category(db: AsyncSession = Depends(get_db)):
+    """List all available sources grouped by category"""
+    
+    # Get all sources
+    sources = await list_sources(db)
+    
+    # Group by category
+    grouped = {}
+    for source in sources:
+        category = source.get('category', 'uncategorized')
+        if category not in grouped:
+            grouped[category] = []
+        grouped[category].append(source)
+    
+    return grouped
 
 @router.get("/sources/{source_id}/documents", response_model=List[DocumentResponse])
 async def get_source_documents(
