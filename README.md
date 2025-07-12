@@ -20,6 +20,7 @@ make up       # Start all services
 
 2. **Access the platform:**
 - **Frontend**: http://localhost:3000
+- **Admin Portal**: http://localhost:3000/admin (login: admin/admin123)
 - **API Documentation**: http://localhost:8000/docs
 - **API Health Check**: http://localhost:8000/health
 - **Celery Monitor (Flower)**: http://localhost:5555
@@ -32,6 +33,28 @@ make clean    # Stop and remove all data
 ```
 
 ## 📊 Current Status - Phase 1 Complete ✅
+
+### 🆕 Admin Portal & Simplified Configuration
+
+#### **Admin Portal** (http://localhost:3000/admin)
+- **Dashboard**: Real-time statistics, job monitoring, system health
+- **Sources Management**: Configure data sources with visual indicators
+  - 🔗 **Linked Sources**: Fixed to specific diseases (e.g., r/MultipleSclerosis)
+  - 🔍 **Search Sources**: Search for disease terms (e.g., PubMed)
+- **Disease Management**: Configure search terms and synonyms
+  - Tag-based search term editor
+  - Visual search preview: "term1 OR term2 OR term3"
+  - Disease merging for duplicates
+- **Job Monitoring**: Track scraping jobs and trigger manual runs
+- **JWT Authentication**: Secure admin access
+
+#### **Simplified Source Configuration**
+- **One Config Source**: Eliminated confusing dual-config system
+- **Clear Association Methods**:
+  - **Linked**: Source covers specific diseases only
+  - **Search**: Source searches for configured disease terms
+- **Visual Clarity**: Icons and descriptions make behavior obvious
+- **KISS Principle**: Minimal complexity, maximum clarity
 
 ### 🎯 NEW: Dynamic Database-Driven Interface
 
@@ -134,6 +157,19 @@ make lint           # Run code linters
 - `POST /api/scrapers/scrape` - Trigger scraping job
 - `GET /api/scrapers/jobs` - View scraping jobs status
 
+### Admin API (Protected - Requires JWT)
+- `POST /api/admin/login` - Admin authentication
+- `GET /api/admin/dashboard/stats` - Dashboard statistics
+- `GET /api/admin/sources` - List sources with configuration
+- `POST /api/admin/sources` - Create new source
+- `PATCH /api/admin/sources/{id}` - Update source configuration
+- `POST /api/admin/sources/{id}/trigger-scrape` - Trigger source scraping
+- `GET /api/admin/diseases` - List diseases with search terms
+- `POST /api/admin/diseases` - Create new disease
+- `PATCH /api/admin/diseases/{id}` - Update disease search terms
+- `POST /api/admin/diseases/{id}/merge/{target_id}` - Merge diseases
+- `GET /api/admin/jobs` - List crawl jobs with status
+
 ### Filter Options Available
 - **Source Types**: Primary (clinical trials, journals) vs Secondary (forums, blogs)
 - **Diseases/Conditions**: All diseases with document counts
@@ -168,22 +204,35 @@ make lint           # Run code linters
 medicuslabs/
 ├── backend/                    # FastAPI application
 │   ├── api/                   # API endpoints
+│   │   ├── admin/            # Admin portal endpoints
+│   │   │   ├── auth.py      # JWT authentication
+│   │   │   ├── sources.py   # Source configuration
+│   │   │   ├── diseases.py  # Disease management
+│   │   │   └── jobs.py      # Job monitoring
 │   │   ├── search.py         # Basic search endpoints
 │   │   ├── search_enhanced.py # Advanced search with complex filtering
 │   │   ├── search_advanced.py # Dynamic search with adaptive columns
 │   │   └── metadata.py       # Metadata discovery and values
 │   ├── core/                 # Core configuration
+│   │   ├── auth.py          # Authentication utilities
+│   │   └── config.py        # Environment configuration
 │   ├── models/               # Database models and schemas
 │   ├── scrapers/            # Data scrapers
 │   └── tasks/               # Celery background tasks
 ├── frontend/                 # React application
 │   ├── src/
 │   │   ├── components/      # React components
+│   │   │   ├── admin/       # Admin portal components
+│   │   │   │   ├── Dashboard.tsx  # Admin dashboard
+│   │   │   │   ├── Sources.tsx    # Source management
+│   │   │   │   └── Diseases.tsx   # Disease management
 │   │   │   ├── SourceTypeSelector.tsx # Visual source selection
 │   │   │   ├── DiseaseSelector.tsx    # Searchable disease dropdown
 │   │   │   ├── DynamicDataTable.tsx   # Adaptive column table
 │   │   │   └── MedicalDataSearchDynamic.tsx # Main interface
 │   │   ├── api/            # API client
+│   │   │   ├── admin.ts    # Admin API client
+│   │   │   └── ...         # Other API clients
 │   │   ├── utils/          # Utility functions
 │   │   └── types/          # TypeScript types
 │   └── public/             # Static assets
@@ -260,11 +309,15 @@ medicuslabs/
 - Treatment pathway analysis
 - Research gap identification
 
-### Phase 4: Admin & Management (Week 5-6)
-- Admin dashboard for managing sources and diseases
-- User management and authentication
-- Data quality monitoring
-- Export and reporting features
+### Phase 4: Admin & Management (Week 5-6) ✅ COMPLETED
+- ✅ Admin dashboard for managing sources and diseases
+- ✅ JWT authentication for admin access
+- ✅ Source configuration with visual indicators
+- ✅ Disease search term management
+- ✅ Job monitoring and manual triggers
+- ⏳ User management (multi-user support)
+- ⏳ Data quality monitoring
+- ⏳ Export and reporting features
 
 ## 📝 Contributing
 

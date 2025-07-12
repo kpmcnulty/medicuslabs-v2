@@ -1,13 +1,15 @@
--- Source seed data for medical data aggregation platform
--- Includes categories and configuration for each source
+-- Simplified source configuration
+-- Only core sources that work and make sense for our 7 diseases
 
--- Primary sources (structured data)
-INSERT INTO sources (name, type, base_url, category, rate_limit, requires_auth, scraper_type) VALUES
-('PubMed', 'primary', 'https://pubmed.ncbi.nlm.nih.gov', 'publications', 10, false, 'pubmed_api'),
-('ClinicalTrials.gov', 'primary', 'https://clinicaltrials.gov', 'trials', 10, false, 'clinicaltrials_api');
+-- Search-based sources (search for disease terms across all content)
+INSERT INTO sources (name, category, base_url, scraper_type, rate_limit, association_method, config) VALUES
+('PubMed', 'publications', 'https://pubmed.ncbi.nlm.nih.gov', 'pubmed_api', 10, 'search', 
+  '{"results_per_disease": 50, "date_range": "1year"}'::jsonb),
+('ClinicalTrials.gov', 'trials', 'https://clinicaltrials.gov', 'clinicaltrials_api', 10, 'search',
+  '{"results_per_disease": 25, "include_recruiting": true}'::jsonb)
+ON CONFLICT (name) DO UPDATE SET 
+  association_method = EXCLUDED.association_method,
+  config = EXCLUDED.config;
 
--- Secondary sources (unstructured data from communities)
-INSERT INTO sources (name, type, base_url, category, rate_limit, requires_auth, scraper_type) VALUES
-('Reddit Medical', 'secondary', 'https://www.reddit.com', 'community', 60, false, 'reddit_scraper'),
-('HealthUnlocked', 'secondary', 'https://healthunlocked.com', 'community', 30, false, 'web_scraper'),
-('Patient.info Forums', 'secondary', 'https://patient.info/forums', 'community', 30, false, 'web_scraper');
+-- Note: Disease-specific sources like r/MultipleSclerosis should be added via the admin portal
+-- This keeps the seed data minimal and allows flexibility in source management

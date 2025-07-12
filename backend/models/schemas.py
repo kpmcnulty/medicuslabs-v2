@@ -7,6 +7,10 @@ class SourceType(str, Enum):
     primary = "primary"
     secondary = "secondary"
 
+class AssociationMethod(str, Enum):
+    linked = "linked"
+    search = "search"
+
 class DocumentStatus(str, Enum):
     pending = "pending"
     processing = "processing"
@@ -20,6 +24,7 @@ class SourceBase(BaseModel):
     base_url: Optional[str] = None
     config: Dict[str, Any] = {}
     is_active: bool = True
+    association_method: AssociationMethod = AssociationMethod.search
 
 class SourceCreate(SourceBase):
     pass
@@ -33,6 +38,7 @@ class SourceResponse(SourceBase):
     last_crawled: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    diseases: List['DiseaseResponse'] = []
     
     class Config:
         from_attributes = True
@@ -70,11 +76,9 @@ class DocumentResponse(DocumentBase):
 # Disease schemas
 class DiseaseBase(BaseModel):
     name: str
-    description: Optional[str] = None
+    category: Optional[str] = None
     synonyms: List[str] = []
-    icd10_codes: List[str] = []
-    mesh_terms: List[str] = []
-    snomed_codes: List[str] = []
+    search_terms: List[str] = []
 
 class DiseaseCreate(DiseaseBase):
     pass
@@ -82,7 +86,6 @@ class DiseaseCreate(DiseaseBase):
 class DiseaseResponse(DiseaseBase):
     id: int
     created_at: datetime
-    updated_at: datetime
     
     class Config:
         from_attributes = True
@@ -118,7 +121,7 @@ class CrawlJobResponse(BaseModel):
 # Scraping request schemas
 class ScrapeRequest(BaseModel):
     source_name: str
-    disease_terms: List[str]
+    disease_ids: List[int]
     options: Dict[str, Any] = {}
 
 class ScrapeResponse(BaseModel):

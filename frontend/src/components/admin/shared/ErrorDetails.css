@@ -1,0 +1,68 @@
+.error-details {
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  overflow: hidden;
+}
+
+.error-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.error-header:hover {
+  background-color: #fee2e2;
+}
+
+.error-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.error-title {
+  font-weight: 600;
+  color: #991b1b;
+  flex-shrink: 0;
+}
+
+.error-summary {
+  color: #7f1d1d;
+  font-size: 0.875rem;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expand-icon {
+  color: #991b1b;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.expand-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.error-body {
+  padding: 1rem;
+  border-top: 1px solid #fecaca;
+  background-color: #fff5f5;
+}
+
+.error-body pre {
+  margin: 0;
+  padding: 1rem;
+  background-color: #fef2f2;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #991b1b;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}

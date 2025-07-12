@@ -39,17 +39,18 @@ const MedicalDataSearchDynamic: React.FC = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/search/`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/search/unified`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          query: searchState.query || undefined,
-          categories: searchState.sourceTypes.length > 0 ? searchState.sourceTypes : undefined,
-          metadata_filters: Object.keys(searchState.metadataFilters).length > 0 ? searchState.metadataFilters : undefined,
-          page: currentPage,
-          page_size: pageSize
+          q: searchState.query || undefined,
+          source_categories: searchState.sourceTypes.length > 0 ? searchState.sourceTypes : undefined,
+          diseases: searchState.disease ? [searchState.disease] : undefined,
+          metadata: Object.keys(searchState.metadataFilters).length > 0 ? searchState.metadataFilters : undefined,
+          limit: pageSize,
+          offset: (currentPage - 1) * pageSize
         }),
       });
 
@@ -178,7 +179,6 @@ const MedicalDataSearchDynamic: React.FC = () => {
           <DiseaseSelector
             selectedDisease={searchState.disease}
             onDiseaseChange={handleDiseaseChange}
-            sourceTypes={searchState.sourceTypes}
           />
         </div>
       </div>

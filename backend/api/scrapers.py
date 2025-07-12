@@ -2,15 +2,17 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from typing import List, Dict, Any
+from datetime import datetime
+import json
 from loguru import logger
 
 from core.database import get_db
-from models.database import Source, CrawlJob, Document
+from models.database import Source, CrawlJob, Document, Disease
 from models.schemas import (
     ScrapeRequest, ScrapeResponse, CrawlJobResponse,
     DocumentResponse, SourceResponse
 )
-from tasks.scrapers import scrape_clinicaltrials, scrape_pubmed, scrape_all_sources
+from tasks.scrapers import scrape_clinicaltrials, scrape_pubmed, scrape_reddit, scrape_all_sources
 from tasks.scheduled import (
     daily_incremental_update, 
     weekly_full_check,
@@ -21,7 +23,7 @@ router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
 
 @router.post("/trigger", response_model=ScrapeResponse)
 async def trigger_scrape(request: ScrapeRequest, db: AsyncSession = Depends(get_db)):
-    """Trigger a scraping job for specified disease terms"""
+    """Trigger a scraping job for specified diseases"""
     
     # Validate source
     source_name_lower = request.source_name.lower()
@@ -31,6 +33,8 @@ async def trigger_scrape(request: ScrapeRequest, db: AsyncSession = Depends(get_
         "clinicaltrials": scrape_clinicaltrials,
         "clinicaltrials.gov": scrape_clinicaltrials,
         "pubmed": scrape_pubmed,
+        "reddit": scrape_reddit,
+        "reddit medical": scrape_reddit,
         "all": scrape_all_sources
     }
     
@@ -40,12 +44,61 @@ async def trigger_scrape(request: ScrapeRequest, db: AsyncSession = Depends(get_
             detail=f"Invalid source: {request.source_name}. Valid sources: {list(task_map.keys())}"
         )
     
-    # Launch Celery task
+    # Get disease names for the provided IDs
+    disease_query = await db.execute(
+        select(Disease).where(Disease.id.in_(request.disease_ids))
+    )
+    diseases = disease_query.scalars().all()
+    
+    if len(diseases) != len(request.disease_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="One or more disease IDs not found"
+        )
+    
+    # Get source ID
+    source_result = await db.execute(
+        select(Source).where(Source.name.ilike(f"%{request.source_name}%"))
+    )
+    source = source_result.scalar_one_or_none()
+    
+    if not source:
+        raise HTTPException(status_code=400, detail=f"Source not found: {request.source_name}")
+    
+    # Create crawl job
+    job_result = await db.execute(
+        text("""
+            INSERT INTO crawl_jobs (source_id, status, started_at, config)
+            VALUES (:source_id, 'pending', :started_at, :config)
+            RETURNING id
+        """),
+        {
+            "source_id": source.id,
+            "started_at": datetime.now(),
+            "config": json.dumps({
+                "disease_ids": request.disease_ids,
+                "disease_names": [d.name for d in diseases],
+                **request.options
+            })
+        }
+    )
+    job_id = job_result.scalar_one()
+    await db.commit()
+    
+    # Launch Celery task with disease IDs and job ID
     task = task_map[source_name_lower]
-    result = task.delay(request.disease_terms, **request.options)
+    task_params = {
+        "disease_ids": request.disease_ids,
+        "disease_names": [d.name for d in diseases],
+        "job_id": job_id,
+        "source_id": source.id,
+        "source_name": source.name,
+        **request.options
+    }
+    result = task.delay(**task_params)
     
     return ScrapeResponse(
-        job_id=0,  # We'll improve this to track actual job IDs
+        job_id=job_id,
         message=f"Scraping job started for {request.source_name}",
         status="started"
     )
@@ -179,22 +232,6 @@ async def list_sources(db: AsyncSession = Depends(get_db)):
     
     return sources
 
-@router.get("/sources/by-category", response_model=Dict[str, List[Dict[str, Any]]])
-async def list_sources_by_category(db: AsyncSession = Depends(get_db)):
-    """List all available sources grouped by category"""
-    
-    # Get all sources
-    sources = await list_sources(db)
-    
-    # Group by category
-    grouped = {}
-    for source in sources:
-        category = source.get('category', 'uncategorized')
-        if category not in grouped:
-            grouped[category] = []
-        grouped[category].append(source)
-    
-    return grouped
 
 @router.get("/sources/{source_id}/documents", response_model=List[DocumentResponse])
 async def get_source_documents(

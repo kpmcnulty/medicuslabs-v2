@@ -68,11 +68,23 @@ format:
 
 # Run database migrations
 migrate:
-	docker-compose exec api alembic upgrade head
+	@echo "Running database migrations..."
+	@for file in database/migrations/*.sql; do \
+		echo "Applying $$file..."; \
+		cat $$file | docker-compose exec -T postgres psql -U medical_user -d medical_data || exit 1; \
+	done
+	@echo "Migrations complete!"
 
 # Create new migration
 migration:
-	docker-compose exec api alembic revision --autogenerate -m "$(message)"
+	@echo "Creating new migration: $(message)"
+	@timestamp=$$(date +%Y%m%d_%H%M%S); \
+	filename="database/migrations/$${timestamp}_$(message).sql"; \
+	touch "$$filename"; \
+	echo "-- Migration: $(message)" > "$$filename"; \
+	echo "-- Created: $$(date)" >> "$$filename"; \
+	echo "" >> "$$filename"; \
+	echo "Created $$filename"
 
 # Shell access
 shell-api:

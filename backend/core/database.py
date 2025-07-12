@@ -3,6 +3,7 @@ from sqlalchemy.orm import declarative_base
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import asyncpg
+import json
 from .config import settings
 
 # Create async engine

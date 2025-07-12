@@ -62,28 +62,34 @@ const SourceTypeSelector: React.FC<SourceTypeSelectorProps> = ({
     const fetchSourceData = async () => {
       setFetchingData(true);
       try {
-        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/scrapers/sources/by-category`);
+        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/search/filters`);
         if (response.ok) {
-          const sourcesByCategory: Record<string, SourceData[]> = await response.json();
+          const filterData = await response.json();
           
-          // Build source types from API response
+          // Build source types from categories in filter response
           const types: SourceType[] = [];
           
-          Object.entries(sourcesByCategory).forEach(([category, sources]) => {
-            const metadata = CATEGORY_METADATA[category];
-            if (metadata && sources.length > 0) {
-              const totalDocs = sources.reduce((sum, s) => sum + s.document_count, 0);
-              types.push({
-                id: category,
-                label: metadata.label,
-                icon: metadata.icon,
-                sources: sources.map(s => s.name),
-                description: metadata.description,
-                color: metadata.color,
-                documentCount: totalDocs
-              } as SourceType & { documentCount: number });
-            }
-          });
+          if (filterData.categories) {
+            filterData.categories.forEach((category: any) => {
+              const metadata = CATEGORY_METADATA[category.value];
+              if (metadata) {
+                // Get sources for this category
+                const categorySources = filterData.sources
+                  .filter((s: any) => s.category === category.value)
+                  .map((s: any) => s.value);
+                
+                types.push({
+                  id: category.value,
+                  label: metadata.label,
+                  icon: metadata.icon,
+                  sources: categorySources,
+                  description: metadata.description,
+                  color: metadata.color,
+                  documentCount: category.count || 0
+                } as SourceType & { documentCount: number });
+              }
+            });
+          }
           
           // Sort by category order
           types.sort((a, b) => {
@@ -115,7 +121,7 @@ const SourceTypeSelector: React.FC<SourceTypeSelectorProps> = ({
   };
 
   const handleSelectAll = () => {
-    if (selectedTypes.length === SOURCE_TYPES.length) {
+    if (selectedTypes.length === sourceTypes.length) {
       // Deselect all
       onSelectionChange([]);
     } else {

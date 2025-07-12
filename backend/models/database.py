@@ -11,9 +11,10 @@ from datetime import datetime
 from typing import Optional
 from core.database import Base
 
-class SourceType(str, enum.Enum):
-    primary = "primary"
-    secondary = "secondary"
+class SourceCategory(str, enum.Enum):
+    publications = "publications"
+    trials = "trials"
+    community = "community"
 
 class DocumentStatus(str, enum.Enum):
     pending = "pending"
@@ -26,23 +27,23 @@ class Source(Base):
     
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
-    type = Column(Enum(SourceType), nullable=False)
+    category = Column(Enum(SourceCategory), nullable=False)
     base_url = Column(Text)
-    config = Column(JSON, default={})
+    scraper_type = Column(String(100))
+    rate_limit = Column(Integer, default=10)
     is_active = Column(Boolean, default=True)
+    config = Column(JSON, default={})
     last_crawled = Column(DateTime)
     last_crawled_id = Column(Text)
     crawl_state = Column(JSON, default={})
-    category = Column(String(50))
-    rate_limit = Column(Integer, default=10)
-    requires_auth = Column(Boolean, default=False)
-    scraper_type = Column(String(100))
+    association_method = Column(String(20), default='search')
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Relationships
     documents = relationship("Document", back_populates="source")
     crawl_jobs = relationship("CrawlJob", back_populates="source")
+    diseases = relationship("Disease", secondary="source_diseases", back_populates="sources")
 
 class Document(Base):
     __tablename__ = "documents"
@@ -54,18 +55,16 @@ class Document(Base):
     title = Column(Text)
     content = Column(Text)
     summary = Column(Text)
-    raw_path = Column(Text)
-    status = Column(Enum(DocumentStatus), default=DocumentStatus.pending)
+    doc_metadata = Column(JSON, default={})
+    status = Column(String(50), default="active")
     language = Column(String(10), default="en")
     relevance_score = Column(Float)
-    created_at = Column(DateTime, default=func.now(), primary_key=True)
+    created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     scraped_at = Column(DateTime)
-    last_checked_at = Column(DateTime)
     source_updated_at = Column(DateTime)
     update_count = Column(Integer, default=0)
     embedding = Column(Vector(384))
-    doc_metadata = Column("metadata", JSON, default={})
     
     # Relationships
     source = relationship("Source", back_populates="documents")
@@ -78,17 +77,22 @@ class Disease(Base):
     __tablename__ = "diseases"
     
     id = Column(Integer, primary_key=True)
-    name = Column(Text, nullable=False, unique=True)
-    description = Column(Text)
+    name = Column(String(255), nullable=False, unique=True)
+    category = Column(String(100))
     synonyms = Column(ARRAY(Text), default=[])
-    icd10_codes = Column(ARRAY(Text), default=[])
-    mesh_terms = Column(ARRAY(Text), default=[])
-    snomed_codes = Column(ARRAY(Text), default=[])
+    search_terms = Column(ARRAY(Text), default=[])
     created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Relationships
     document_diseases = relationship("DocumentDisease", back_populates="disease")
+    sources = relationship("Source", secondary="source_diseases", back_populates="diseases")
+
+class SourceDisease(Base):
+    __tablename__ = "source_diseases"
+    
+    source_id = Column(Integer, ForeignKey("sources.id"), primary_key=True)
+    disease_id = Column(Integer, ForeignKey("diseases.id"), primary_key=True)
+    created_at = Column(DateTime, default=func.now())
 
 class DocumentDisease(Base):
     __tablename__ = "document_diseases"

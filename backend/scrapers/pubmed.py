@@ -12,20 +12,25 @@ class PubMedScraper(BaseScraper):
     """Enhanced PubMed scraper that captures ALL available metadata"""
     
     def __init__(self):
-        # Source ID 2 is PubMed from our initial data
+        # Source ID 1 is PubMed from our initial data
         # Use higher rate limit if API key is provided
         rate_limit = 10.0 if settings.pubmed_api_key else 3.0
-        super().__init__(source_id=2, source_name="PubMed", rate_limit=rate_limit)
+        super().__init__(source_id=1, source_name="PubMed", rate_limit=rate_limit)
         self.api_key = settings.pubmed_api_key
         self.BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
     
-    async def search(self, disease_term: str, max_results: int = 100, **kwargs) -> List[Dict[str, Any]]:
+    async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         """Search for articles by disease term"""
+        # Get max results from kwargs (passed by base class)
+        max_results = kwargs.get('max_results', 100)
+        
         # Check for incremental update
         since_date = kwargs.get('since_date')
         
         # First, search for PMIDs
-        pmids = await self._search_pmids(disease_term, max_results, since_date=since_date, **kwargs)
+        # Remove max_results from kwargs to avoid duplicate argument
+        search_kwargs = {k: v for k, v in kwargs.items() if k != 'max_results'}
+        pmids = await self._search_pmids(disease_term, max_results, since_date=since_date, **search_kwargs)
         
         if not pmids:
             logger.info(f"No articles found for '{disease_term}'")

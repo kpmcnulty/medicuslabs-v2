@@ -11,13 +11,16 @@ class ClinicalTrialsScraper(BaseScraper):
     BASE_URL = "https://clinicaltrials.gov/api/v2"
     
     def __init__(self):
-        # Source ID 1 is ClinicalTrials.gov from our initial data
-        super().__init__(source_id=1, source_name="ClinicalTrials.gov", rate_limit=10.0)
+        # Source ID 2 is ClinicalTrials.gov from our initial data
+        super().__init__(source_id=2, source_name="ClinicalTrials.gov", rate_limit=10.0)
     
-    async def search(self, disease_term: str, max_results: int = 100, **kwargs) -> List[Dict[str, Any]]:
+    async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         """Search for clinical trials by disease term"""
         results = []
         page_token = None
+        
+        # Get max results from kwargs (passed by base class)
+        max_results = kwargs.get('max_results', 100)
         
         # Check for incremental update parameters
         since_date = kwargs.get('since_date')

@@ -39,6 +39,7 @@ class BaseScraper(ABC):
         self.client = httpx.AsyncClient(timeout=30.0)
         self.job_id: Optional[int] = None
         self.errors: List[Dict[str, Any]] = []
+        self.disease_ids: List[int] = []
         
     async def __aenter__(self):
         return self
@@ -72,7 +73,7 @@ class BaseScraper(ABC):
                 """,
                 self.source_id,
                 datetime.now(),
-                json.dumps(config)
+                json.dumps(config or {})
             )
             self.job_id = result['id']
             logger.info(f"Started crawl job {self.job_id} for {self.source_name}")
@@ -123,6 +124,56 @@ class BaseScraper(ABC):
                     'crawl_state': result['crawl_state'] or {}
                 }
             return {}
+    
+    async def get_source_config(self) -> Dict[str, Any]:
+        """Get source default configuration"""
+        async with get_pg_connection() as conn:
+            result = await conn.fetchrow(
+                """
+                SELECT default_config
+                FROM sources
+                WHERE id = $1
+                """,
+                self.source_id
+            )
+            if result and result['default_config']:
+                config = result['default_config']
+                # Handle case where asyncpg returns JSONB as string
+                if isinstance(config, str):
+                    config = json.loads(config)
+                return config
+            return {}
+    
+    async def get_job_config(self) -> Dict[str, Any]:
+        """Get job-specific configuration"""
+        if not self.job_id:
+            return {}
+        
+        async with get_pg_connection() as conn:
+            result = await conn.fetchrow(
+                """
+                SELECT config
+                FROM crawl_jobs
+                WHERE id = $1
+                """,
+                self.job_id
+            )
+            if result and result['config']:
+                config = result['config']
+                # Handle case where asyncpg returns JSONB as string
+                if isinstance(config, str):
+                    config = json.loads(config)
+                return config
+            return {}
+    
+    def get_config_value(self, key: str, runtime_kwargs: Dict[str, Any], 
+                        job_config: Dict[str, Any], source_config: Dict[str, Any], 
+                        default_value: Any = None) -> Any:
+        """Get configuration value with hierarchy: runtime > job > source > default"""
+        return (runtime_kwargs.get(key) or 
+                job_config.get(key) or 
+                source_config.get(key) or 
+                default_value)
     
     async def update_job(self, update: CrawlJobUpdate):
         """Update crawl job status"""
@@ -177,7 +228,7 @@ class BaseScraper(ABC):
         async with get_pg_connection() as conn:
             result = await conn.fetchrow(
                 """
-                SELECT id, source_updated_at, metadata, update_count
+                SELECT id, source_updated_at, doc_metadata, update_count
                 FROM documents 
                 WHERE source_id = $1 AND external_id = $2
                 """,
@@ -211,9 +262,9 @@ class BaseScraper(ABC):
                     """
                     INSERT INTO documents (
                         source_id, external_id, url, title, content, 
-                        summary, metadata, scraped_at, status,
-                        source_updated_at, last_checked_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, CURRENT_TIMESTAMP)
+                        summary, doc_metadata, scraped_at, status,
+                        source_updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9)
                     RETURNING id
                     """,
                     document.source_id,
@@ -227,6 +278,20 @@ class BaseScraper(ABC):
                     source_updated_at or datetime.now()
                 )
                 doc_id = result['id']
+                
+                # Link document to diseases
+                if self.disease_ids:
+                    for disease_id in self.disease_ids:
+                        await conn.execute(
+                            """
+                            INSERT INTO document_diseases (document_id, disease_id, relevance_score)
+                            VALUES ($1, $2, 1.0)
+                            ON CONFLICT (document_id, disease_id) DO NOTHING
+                            """,
+                            doc_id,
+                            disease_id
+                        )
+                
                 logger.info(f"Saved document {document.external_id} with ID {doc_id}")
                 return doc_id
                 
@@ -249,9 +314,8 @@ class BaseScraper(ABC):
                         title = $2,
                         content = $3,
                         summary = $4,
-                        metadata = $5,
+                        doc_metadata = $5,
                         updated_at = CURRENT_TIMESTAMP,
-                        last_checked_at = CURRENT_TIMESTAMP,
                         source_updated_at = $6,
                         update_count = COALESCE(update_count, 0) + 1
                     WHERE id = $1
@@ -263,6 +327,20 @@ class BaseScraper(ABC):
                     json.dumps(document.metadata),
                     source_updated_at or datetime.now()
                 )
+                
+                # Update disease links if we have disease IDs
+                if self.disease_ids:
+                    for disease_id in self.disease_ids:
+                        await conn.execute(
+                            """
+                            INSERT INTO document_diseases (document_id, disease_id, relevance_score)
+                            VALUES ($1, $2, 1.0)
+                            ON CONFLICT (document_id, disease_id) DO NOTHING
+                            """,
+                            doc_id,
+                            disease_id
+                        )
+                
                 logger.info(f"Updated document {document.external_id} (ID: {doc_id})")
                 return doc_id
         except Exception as e:
@@ -273,7 +351,7 @@ class BaseScraper(ABC):
         """Update last_checked_at timestamp"""
         async with get_pg_connection() as conn:
             await conn.execute(
-                "UPDATE documents SET last_checked_at = CURRENT_TIMESTAMP WHERE id = $1",
+                "UPDATE documents SET updated_at = CURRENT_TIMESTAMP WHERE id = $1",
                 doc_id
             )
     
@@ -309,33 +387,110 @@ class BaseScraper(ABC):
             logger.error(f"Error making request to {url}: {e}")
             raise
     
-    async def scrape_incremental(self, disease_terms: List[str], **kwargs) -> Dict[str, Any]:
+    async def scrape_incremental(self, disease_ids: List[int], disease_names: List[str], **kwargs) -> Dict[str, Any]:
         """Incremental scraping - only get new/updated documents"""
-        # Get last crawl state
+        # Get configurations
+        source_config = await self.get_source_config()
         state = await self.get_source_state()
         last_crawled = state.get('last_crawled')
         
+        # Get update window from config hierarchy
+        update_window_hours = self.get_config_value(
+            'update_window_hours', kwargs, {}, source_config, 24
+        )
+        
         if last_crawled:
             kwargs['since_date'] = last_crawled
-            logger.info(f"Running incremental update since {last_crawled}")
+            kwargs['is_incremental'] = True
+            logger.info(f"Running incremental update since {last_crawled} (window: {update_window_hours}h)")
         else:
-            logger.info("No previous crawl found, running full scrape")
+            kwargs['is_incremental'] = False
+            logger.info("No previous crawl found, running initial scrape")
         
-        return await self.scrape(disease_terms, **kwargs)
+        return await self.scrape(disease_ids, disease_names, **kwargs)
     
-    async def scrape(self, disease_terms: List[str], **kwargs) -> Dict[str, Any]:
-        """Main scraping method"""
-        await self.start_job({"disease_terms": disease_terms, **kwargs})
+    async def scrape(self, disease_ids: List[int], disease_names: List[str], **kwargs) -> Dict[str, Any]:
+        """Main scraping method with configuration hierarchy"""
+        # Get source info to determine association method
+        async with get_pg_connection() as conn:
+            source = await conn.fetchrow("""
+                SELECT association_method, id
+                FROM sources
+                WHERE id = $1
+            """, self.source_id)
+            
+            if not source:
+                raise ValueError(f"Source {self.source_id} not found")
+            
+            association_method = source['association_method'] or 'search'
+        
+        # For fixed sources, get their linked diseases
+        if association_method == 'fixed':
+            async with get_pg_connection() as conn:
+                linked = await conn.fetch("""
+                    SELECT sd.disease_id, d.name as disease_name
+                    FROM source_diseases sd
+                    JOIN diseases d ON sd.disease_id = d.id
+                    WHERE sd.source_id = $1
+                """, self.source_id)
+                
+                if not linked:
+                    logger.warning(f"Fixed source {self.source_name} has no linked diseases")
+                    return {"documents_found": 0, "documents_processed": 0, "errors": []}
+                
+                # Filter to only requested diseases that are linked
+                linked_ids = {row['disease_id'] for row in linked}
+                filtered_ids = [did for did in disease_ids if did in linked_ids]
+                
+                if not filtered_ids:
+                    logger.info(f"Fixed source {self.source_name} not linked to any requested diseases")
+                    return {"documents_found": 0, "documents_processed": 0, "errors": []}
+                
+                # Update disease lists to only linked ones
+                disease_ids = filtered_ids
+                disease_names = [row['disease_name'] for row in linked if row['disease_id'] in filtered_ids]
+                logger.info(f"Fixed source {self.source_name} will scrape for diseases: {disease_names}")
+        
+        # Store disease IDs for linking documents
+        self.disease_ids = disease_ids
+        self.association_method = association_method
+        
+        # Create job and get configurations (if not already created)
+        if not self.job_id:
+            await self.start_job({"disease_ids": disease_ids, "disease_names": disease_names, **kwargs})
+        
+        # Get all configuration levels
+        source_config = await self.get_source_config()
+        job_config = await self.get_job_config()
+        
+        # Determine if this is an incremental update
+        is_incremental = kwargs.get('is_incremental', False)
+        
+        # Get appropriate limit based on scrape type
+        limit_key = 'incremental_limit' if is_incremental else 'initial_limit'
+        default_limit = 50 if is_incremental else 100
+        
+        # Get limit from configuration hierarchy
+        limit = self.get_config_value(
+            'limit',  # First check for explicit limit
+            kwargs, job_config, source_config,
+            # Fall back to type-specific limit
+            self.get_config_value(limit_key, kwargs, job_config, source_config, default_limit)
+        )
+        
+        # Pass configuration to search
+        kwargs['max_results'] = limit
         
         total_found = 0
         total_processed = 0
         
         try:
-            for term in disease_terms:
-                logger.info(f"Searching for '{term}' in {self.source_name}")
+            if self.association_method == 'fixed':
+                # Fixed sources: scrape everything, no search terms
+                logger.info(f"Scraping all content from fixed source {self.source_name}")
                 
-                # Search for documents
-                results = await self.search(term, **kwargs)
+                # For fixed sources, we pass empty string or None as search term
+                results = await self.search("", **kwargs)
                 total_found += len(results)
                 
                 # Process each result
@@ -365,6 +520,42 @@ class BaseScraper(ABC):
                             "error": str(e),
                             "timestamp": datetime.now().isoformat()
                         })
+            else:
+                # Search sources: iterate through disease terms
+                for disease_name in disease_names:
+                    logger.info(f"Searching for '{disease_name}' in {self.source_name}")
+                    
+                    # Search for documents
+                    results = await self.search(disease_name, **kwargs)
+                    total_found += len(results)
+                    
+                    # Process each result
+                    for result in results:
+                        try:
+                            # Extract basic data
+                            document, source_updated_at = self.extract_document_data(result)
+                            
+                            # Save to database
+                            doc_id = await self.save_document(document, source_updated_at)
+                            if doc_id:
+                                total_processed += 1
+                                # Update last crawled ID
+                                await self.update_source_state(last_crawled_id=document.external_id)
+                            
+                            # Update job progress
+                            if total_processed % 10 == 0:
+                                await self.update_job(CrawlJobUpdate(
+                                    documents_found=total_found,
+                                    documents_processed=total_processed
+                                ))
+                                
+                        except Exception as e:
+                            logger.error(f"Error processing document: {e}")
+                            self.errors.append({
+                                "data": str(result)[:200],
+                                "error": str(e),
+                                "timestamp": datetime.now().isoformat()
+                            })
             
             # Final job update
             await self.update_job(CrawlJobUpdate(
