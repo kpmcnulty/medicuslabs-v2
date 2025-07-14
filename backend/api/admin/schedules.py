@@ -5,10 +5,7 @@ from pydantic import BaseModel, Field
 from celery.schedules import crontab
 from core.auth import get_current_admin
 from tasks import celery_app
-from tasks.scheduled import (
-    daily_incremental_update, weekly_full_check, 
-    check_running_jobs, scrape_specific_disease
-)
+from tasks.scheduled import update_all_sources, cleanup_stuck_jobs
 from loguru import logger
 
 router = APIRouter(prefix="/api/admin/schedules", tags=["admin-schedules"])
@@ -41,19 +38,14 @@ class ScheduleResponse(ScheduleBase):
 
 # Define available tasks
 AVAILABLE_TASKS = {
-    "daily_incremental_update": {
-        "task": "tasks.scheduled.daily_incremental_update",
-        "description": "Run incremental updates for all active sources",
+    "daily-update-all": {
+        "task": "tasks.scheduled.update_all_sources",
+        "description": "Update ALL active sources - gets all new/updated data",
         "default_schedule": {"hour": 2, "minute": 0}
     },
-    "weekly_full_check": {
-        "task": "tasks.scheduled.weekly_full_check",
-        "description": "Check for stale documents and re-fetch them",
-        "default_schedule": {"day_of_week": 0, "hour": 3, "minute": 0}
-    },
-    "hourly_status_check": {
-        "task": "tasks.scheduled.check_running_jobs",
-        "description": "Check for stuck jobs and mark them as failed",
+    "hourly-cleanup": {
+        "task": "tasks.scheduled.cleanup_stuck_jobs",
+        "description": "Clean up stuck jobs and maintain system health",
         "default_schedule": {"minute": 0}
     }
 }
@@ -203,10 +195,8 @@ async def run_schedule_now(
     
     # Map task names to actual task functions
     task_map = {
-        "tasks.scheduled.daily_incremental_update": daily_incremental_update,
-        "tasks.scheduled.weekly_full_check": weekly_full_check,
-        "tasks.scheduled.check_running_jobs": check_running_jobs,
-        "tasks.scheduled.scrape_specific_disease": scrape_specific_disease
+        "tasks.scheduled.update_all_sources": update_all_sources,
+        "tasks.scheduled.cleanup_stuck_jobs": cleanup_stuck_jobs
     }
     
     task = task_map.get(task_name)
@@ -223,22 +213,15 @@ async def run_schedule_now(
         "status": "triggered"
     }
 
-@router.post("/custom/disease-scrape", dependencies=[Depends(get_current_admin)])
-async def trigger_disease_scrape(
-    disease_term: str,
-    sources: Optional[List[str]] = None
-) -> Dict[str, Any]:
-    """Trigger a custom disease scrape"""
-    if sources is None:
-        sources = ["clinicaltrials", "pubmed", "reddit"]
-    
-    result = scrape_specific_disease.delay(disease_term, sources)
+@router.post("/custom/trigger-all", dependencies=[Depends(get_current_admin)])
+async def trigger_all_sources() -> Dict[str, Any]:
+    """Manually trigger update for all sources"""
+    result = update_all_sources.delay()
     
     return {
         "task_id": result.id,
-        "disease_term": disease_term,
-        "sources": sources,
-        "status": "triggered"
+        "status": "triggered",
+        "message": "Update all sources task triggered"
     }
 
 @router.get("/available-tasks/list", dependencies=[Depends(get_current_admin)])

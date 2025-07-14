@@ -466,17 +466,9 @@ class BaseScraper(ABC):
         # Determine if this is an incremental update
         is_incremental = kwargs.get('is_incremental', False)
         
-        # Get appropriate limit based on scrape type
-        limit_key = 'incremental_limit' if is_incremental else 'initial_limit'
-        default_limit = 50 if is_incremental else 100
-        
-        # Get limit from configuration hierarchy
-        limit = self.get_config_value(
-            'limit',  # First check for explicit limit
-            kwargs, job_config, source_config,
-            # Fall back to type-specific limit
-            self.get_config_value(limit_key, kwargs, job_config, source_config, default_limit)
-        )
+        # Get limit from configuration - but default to None (no limit)
+        # Individual scrapers should respect API rate limits but get ALL available data
+        limit = self.get_config_value('limit', kwargs, job_config, source_config, None)
         
         # Pass configuration to search
         kwargs['max_results'] = limit

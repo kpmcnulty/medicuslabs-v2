@@ -1,4 +1,4 @@
-# Medical Data Platform TODO - Updated Status
+# Medical Data Platform TODO - Updated Status (As of 2025-07-13)
 
 ## ✅ Phase 1: Make It Searchable - COMPLETED
 
@@ -59,17 +59,19 @@
 - [x] **Type-Safe Frontend** - Full TypeScript implementation
 - [x] **Responsive Design** - Works on desktop and mobile
 
-## 🚧 Phase 1.5: Expand Data Collection & Define Strategy (Next Priority)
+## 🚧 Phase 1.5: Expand Data Collection & Define Strategy (CURRENT SPRINT)
 
-### 🔴 High Priority - Broken Scrapers
+### 🔴 High Priority - Fix Data Collection (2/5 scrapers working)
 - [ ] **Fix Existing Broken Scrapers**
-  - [ ] Reddit medical subreddits (r/AskDocs, r/medical, r/chronicpain)
-  - [ ] HealthUnlocked communities  
-  - [ ] Patient.info forums
+  - [x] Reddit scraper implemented but needs API credentials in .env
+  - [ ] HealthUnlocked communities (web.py exists, config exists, NOT integrated)
+  - [ ] Patient.info forums (web.py exists, config exists, NOT integrated)
 - [ ] **Add High-Value Medical Sources**
-  - [ ] FDA Adverse Event Reporting System (FAERS)
-  - [ ] European Medicines Agency (EMA) database
-  - [ ] Medical journals with open APIs (PLOS, BMJ Open)
+  - [ ] FDA Adverse Event Reporting System (FAERS) - NOT STARTED
+  - [ ] European Medicines Agency (EMA) database - NOT STARTED
+  - [ ] Medical journals with open APIs (PLOS, BMJ Open) - NOT STARTED
+
+### 📊 Current Data Status: ONLY 8 DOCUMENTS (Goal: 100+)
 
 ### 🔴 High Priority - Data Strategy
 - [ ] **Define Scraping Strategy**
@@ -88,15 +90,20 @@
   - [ ] Handle dosage extraction and units
   - [ ] Create mapping tables for common variations
 
-## 🟡 Phase 2: Smart Query Builder (Medium Priority)
+## 🟡 Phase 2: Smart Query Builder (PARTIALLY IMPLEMENTED)
+
+### ✅ What's Done
+- [x] react-querybuilder installed in package.json
+- [x] QueryBuilder component imported in MedicalDataSearchEnhanced.tsx
+- [x] Basic query builder UI rendering
 
 ### 🔴 Currently Missing
-- [ ] **Replace Basic Filters with SmartQueryBuilder**
-  - [ ] Integrate react-querybuilder with dynamic metadata schema
+- [ ] **Complete SmartQueryBuilder Integration**
+  - [ ] Integrate with dynamic metadata schema from /api/metadata/schema
   - [ ] Field-specific operators based on data types
-  - [ ] Value autocomplete for all metadata fields
-  - [ ] Query validation and preview
-  - [ ] Save/load complex queries
+  - [ ] Value autocomplete pulling from /api/metadata/values
+  - [ ] Query validation and SQL preview
+  - [ ] Save/load complex queries to localStorage or backend
 
 ### 🟡 Query Enhancement Features
 - [ ] **Field Correlation Analysis**
@@ -108,7 +115,7 @@
   - [ ] Detect and suggest medical synonyms
   - [ ] Query expansion with related terms
 
-## 🟢 Phase 2.5: Semantic Search (Lower Priority)
+## 🟢 Phase 2.5: Semantic Search (NOT STARTED - pgvector ready but unused)
 
 - [ ] Implement embedding generation for all documents
   - [ ] Choose embedding model (e.g., sentence-transformers/all-MiniLM-L6-v2)
@@ -117,6 +124,7 @@
 - [ ] Add semantic search endpoint (/api/search/semantic)
 - [ ] Implement hybrid search (combine full-text + semantic)
 - [ ] Add relevance scoring with adjustable weights
+- [ ] Note: pgvector extension installed but not utilized
 
 ## 🟢 Phase 3: AI-Powered Insights & NLP Analytics (Future)
 
@@ -137,13 +145,25 @@
   - [ ] Severity classification
   - [ ] FDA MedDRA coding suggestions
 
-## 🟢 Phase 4: Admin & Management (Future)
+## ✅ Phase 4: Admin & Management (COMPLETED EARLY!)
 
-- [ ] Add simple admin UI for triggering scraper runs
-- [ ] Add source management endpoints (add/remove/configure sources)
-- [ ] View scraping job status and logs
-- [ ] Data quality monitoring dashboard
-- [ ] User management and authentication
+### ✅ Implemented Features
+- [x] **Full Admin Portal** at http://localhost:3000/admin
+- [x] **JWT Authentication** with secure login
+- [x] **Source Management** - Add/edit/configure sources with visual indicators
+  - [x] 🔗 Linked sources (disease-specific)
+  - [x] 🔍 Search sources (search all diseases)
+- [x] **Disease Management** - Configure search terms and synonyms
+  - [x] Tag-based search term editor
+  - [x] Visual search preview
+  - [x] Disease merging functionality
+- [x] **Job Monitoring** - View and trigger scraping jobs
+- [x] **Dashboard** - Real-time statistics and system health
+- [x] **Scheduling** - Configure scraper schedules
+
+### 🔴 Still Missing
+- [ ] Data quality monitoring metrics
+- [ ] Export capabilities
 
 ## 🟢 Phase 5: Performance & Polish (Future)
 
@@ -152,20 +172,31 @@
 - [ ] Add search analytics/telemetry
 - [ ] Export capabilities (CSV, JSON, PDF reports)
 
-## 📊 Current State Summary
+## 📊 Current State Summary (Updated 2025-07-13)
 
 ### ✅ What's Working
 - **Dynamic Search Interface** - Fully functional with source selection, disease filtering, adaptive columns
 - **Advanced API** - Metadata discovery, dynamic values, complex filtering
-- **Working Scrapers** - ClinicalTrials.gov (2 documents), PubMed (6 documents)
+- **Working Scrapers** - ClinicalTrials.gov, PubMed (Reddit needs API creds)
 - **Database** - PostgreSQL with full-text search, JSON metadata, pgvector ready
 - **Docker Deployment** - All services running with docker-compose
+- **Admin Portal** - Complete source/disease management, job monitoring, JWT auth
 
-### 🔴 What Needs Immediate Attention
-1. **Fix Broken Scrapers** - Only 2 of 5 sources are working
-2. **Add More Data** - Currently only 8 documents total
-3. **Implement SmartQueryBuilder** - Replace basic filters with visual query builder
-4. **Data Strategy Decisions** - Need to define normalization and expansion approach
+### 🔴 Critical Gaps
+1. **Data Collection** - Only 2/5 scrapers working, ONLY 8 DOCUMENTS (need 100+)
+2. **Forum Scrapers** - HealthUnlocked & Patient.info configs exist but NOT integrated
+3. **FDA FAERS** - High-value adverse event data NOT STARTED
+4. **Smart Query Builder** - Partially implemented, needs integration
+5. **Data Normalization** - No pipeline defined
+
+### 🟡 Implementation Status by Phase
+- **Phase 1** ✅ Core Search - COMPLETE
+- **Phase 1.5** 🚧 Data Collection - IN PROGRESS (blocking progress)
+- **Phase 2** 🟡 Query Builder - PARTIALLY DONE
+- **Phase 2.5** ❌ Semantic Search - NOT STARTED (pgvector unused)
+- **Phase 3** ❌ NLP/AI - NOT STARTED
+- **Phase 4** ✅ Admin Portal - COMPLETE (done early!)
+- **Phase 5** ❌ Performance - NOT STARTED
 
 ### 🎯 Next Sprint Goals
 1. Fix Reddit, HealthUnlocked, Patient.info scrapers
@@ -174,12 +205,6 @@
 4. Expand to 100+ documents across all sources
 5. Define data normalization pipeline
 
-### 🏆 Key Achievements
-- **$1000+ Saved** - Free AG-Grid Enterprise alternative implemented
-- **Zero Hardcoding** - Completely dynamic, database-driven interface
-- **Future-Proof** - Automatically adapts to new sources and fields
-- **Performance** - Efficient metadata queries with proper indexing
-- **User Experience** - Intuitive source selection and disease filtering
 
 ## Technical Architecture Notes
 

@@ -66,25 +66,15 @@ format:
 	docker-compose exec api black .
 	docker-compose exec api ruff check --fix .
 
-# Run database migrations
+# Run database setup
 migrate:
-	@echo "Running database migrations..."
-	@for file in database/migrations/*.sql; do \
-		echo "Applying $$file..."; \
-		cat $$file | docker-compose exec -T postgres psql -U medical_user -d medical_data || exit 1; \
-	done
-	@echo "Migrations complete!"
+	@echo "Running database setup..."
+	@echo "Applying schema..."
+	@cat database/schema.sql | docker-compose exec -T postgres psql -U medical_user -d medical_data || exit 1
+	@echo "Applying seed data..."
+	@cat database/seeds.sql | docker-compose exec -T postgres psql -U medical_user -d medical_data || exit 1
+	@echo "Database setup complete!"
 
-# Create new migration
-migration:
-	@echo "Creating new migration: $(message)"
-	@timestamp=$$(date +%Y%m%d_%H%M%S); \
-	filename="database/migrations/$${timestamp}_$(message).sql"; \
-	touch "$$filename"; \
-	echo "-- Migration: $(message)" > "$$filename"; \
-	echo "-- Created: $$(date)" >> "$$filename"; \
-	echo "" >> "$$filename"; \
-	echo "Created $$filename"
 
 # Shell access
 shell-api:

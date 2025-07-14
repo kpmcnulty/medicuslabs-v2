@@ -35,9 +35,6 @@ const Schedules: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
-  const [showCustomScrape, setShowCustomScrape] = useState(false);
-  const [diseaseTerm, setDiseaseTerm] = useState('');
-  const [selectedSources, setSelectedSources] = useState<string[]>(['clinicaltrials', 'pubmed', 'reddit']);
   const [cronForm, setCronForm] = useState<CronSchedule>({
     minute: '*',
     hour: '*',
@@ -109,47 +106,30 @@ const Schedules: React.FC = () => {
     }
   };
 
-  const handleCustomScrape = async () => {
-    if (!diseaseTerm.trim()) {
-      alert('Please enter a disease term');
-      return;
-    }
-
-    try {
-      const result = await adminApi.triggerDiseaseScrape(diseaseTerm, selectedSources);
-      alert(`✅ Custom scrape triggered!\n\nTask ID: ${result.task_id}\nDisease: ${result.disease_term}\nSources: ${result.sources.join(', ')}\n\nCheck the Jobs page to monitor progress.`);
-      setDiseaseTerm('');
-    } catch (err) {
-      alert('❌ Failed to trigger custom scrape');
-      console.error(err);
-    }
-  };
 
   const formatCronExpression = (schedule: Schedule) => {
     if (schedule.schedule.type === 'crontab') {
       const { minute, hour, day_of_week, day_of_month, month_of_year } = schedule.schedule;
       return `${minute} ${hour} ${day_of_month} ${month_of_year} ${day_of_week}`;
     }
-    return `Every ${schedule.schedule.seconds} seconds`;
+    return schedule.schedule.seconds ? `Every ${schedule.schedule.seconds} seconds` : 'Interval schedule';
   };
 
   const getCronDescription = (schedule: Schedule) => {
     if (schedule.schedule.type !== 'crontab') {
-      return `Runs every ${schedule.schedule.seconds} seconds`;
+      return schedule.schedule.seconds ? `Runs every ${schedule.schedule.seconds} seconds` : 'Interval schedule';
     }
 
     const { minute, hour, day_of_week, day_of_month, month_of_year } = schedule.schedule;
     
-    // Simple human-readable descriptions for common patterns
+    // Simple human-readable descriptions for our schedules
     if (minute === '0' && hour === '2' && day_of_week === '*' && day_of_month === '*' && month_of_year === '*') {
-      return 'Daily at 2:00 AM';
-    } else if (minute === '0' && hour === '3' && day_of_week === '0' && day_of_month === '*' && month_of_year === '*') {
-      return 'Weekly on Sundays at 3:00 AM';
+      return 'Daily at 2:00 AM UTC - Updates ALL sources';
     } else if (minute === '0' && hour === '*' && day_of_week === '*' && day_of_month === '*' && month_of_year === '*') {
-      return 'Every hour at minute 0';
+      return 'Every hour - Cleans up stuck jobs';
     }
     
-    return 'Custom schedule';
+    return 'Custom crontab schedule';
   };
 
   if (loading) return <div className="loading">Loading schedules...</div>;
@@ -236,43 +216,24 @@ const Schedules: React.FC = () => {
       </div>
 
       <div className="custom-scrape-section">
-        <h2>Custom Disease Scraping</h2>
+        <h2>Manual Update Trigger</h2>
         <p className="schedule-description">
-          Trigger an on-demand scrape for a specific disease term across selected sources.
+          Manually trigger an update for all active sources. This runs the same process as the daily schedule.
         </p>
-        <div className="custom-scrape-form">
-          <div className="form-group">
-            <label>Disease Term</label>
-            <input
-              type="text"
-              value={diseaseTerm}
-              onChange={(e) => setDiseaseTerm(e.target.value)}
-              placeholder="e.g., Type 2 Diabetes"
-            />
-          </div>
-          <div className="form-group">
-            <label>Sources</label>
-            <select
-              multiple
-              value={selectedSources}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions, option => option.value);
-                setSelectedSources(selected);
-              }}
-            >
-              <option value="clinicaltrials">ClinicalTrials.gov</option>
-              <option value="pubmed">PubMed</option>
-              <option value="reddit">Reddit</option>
-            </select>
-            <small>Hold Ctrl/Cmd to select multiple</small>
-          </div>
-          <button
-            className="btn-sm btn-success"
-            onClick={handleCustomScrape}
-          >
-            Start Scraping
-          </button>
-        </div>
+        <button
+          className="btn-sm btn-success"
+          onClick={async () => {
+            try {
+              const result = await adminApi.triggerAllSources();
+              alert(`✅ Update triggered!\n\nTask ID: ${result.task_id}\n\nCheck the Jobs page to monitor progress.`);
+            } catch (err) {
+              alert('❌ Failed to trigger update');
+              console.error(err);
+            }
+          }}
+        >
+          Update All Sources Now
+        </button>
       </div>
 
       {editingSchedule && (

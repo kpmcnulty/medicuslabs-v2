@@ -226,11 +226,8 @@ class AdminApi {
     return response.data;
   }
 
-  async triggerDiseaseScrape(disease_term: string, sources?: string[]) {
-    const response = await this.client.post('/api/admin/schedules/custom/disease-scrape', {
-      disease_term,
-      sources,
-    });
+  async triggerAllSources() {
+    const response = await this.client.post('/api/admin/schedules/custom/trigger-all');
     return response.data;
   }
 

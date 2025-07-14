@@ -12,12 +12,8 @@ from models.schemas import (
     ScrapeRequest, ScrapeResponse, CrawlJobResponse,
     DocumentResponse, SourceResponse
 )
-from tasks.scrapers import scrape_clinicaltrials, scrape_pubmed, scrape_reddit, scrape_all_sources
-from tasks.scheduled import (
-    daily_incremental_update, 
-    weekly_full_check,
-    scrape_specific_disease
-)
+from tasks.scrapers import scrape_clinicaltrials, scrape_pubmed, scrape_reddit, scrape_all_sources, scrape_incremental_all
+from tasks.scheduled import update_all_sources, cleanup_stuck_jobs
 
 router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
 
@@ -145,8 +141,8 @@ async def list_jobs(
 async def trigger_incremental_update():
     """Manually trigger an incremental update for all sources"""
     
-    # Launch the daily incremental update task
-    result = daily_incremental_update.delay()
+    # Launch the incremental update task
+    result = scrape_incremental_all.delay()
     
     return ScrapeResponse(
         job_id=0,  # Task ID tracking to be implemented
@@ -159,7 +155,8 @@ async def trigger_disease_update(disease_term: str, sources: List[str] = None):
     """Trigger incremental update for a specific disease"""
     
     # Launch the specific disease scrape task
-    result = scrape_specific_disease.delay(disease_term, sources)
+    # For now, use general scrape with disease filter
+    result = scrape_all_sources.delay(disease_terms=[disease_term], sources=sources)
     
     return ScrapeResponse(
         job_id=0,
@@ -171,8 +168,8 @@ async def trigger_disease_update(disease_term: str, sources: List[str] = None):
 async def trigger_full_check():
     """Manually trigger a full check of stale documents"""
     
-    # Launch the weekly full check task
-    result = weekly_full_check.delay()
+    # Launch the full update task
+    result = update_all_sources.delay()
     
     return ScrapeResponse(
         job_id=0,

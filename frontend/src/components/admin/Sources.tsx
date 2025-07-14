@@ -21,6 +21,8 @@ interface Source {
   updated_at: string;
   document_count: number;
   recent_job_count: number;
+  daily_limit: number;
+  weekly_limit: number;
 }
 
 const Sources: React.FC = () => {
@@ -39,6 +41,8 @@ const Sources: React.FC = () => {
     rate_limit: 10,
     association_method: 'search',
     disease_ids: [] as number[],
+    daily_limit: 100,
+    weekly_limit: 500,
     config: {}
   });
 
@@ -234,6 +238,8 @@ const Sources: React.FC = () => {
                           rate_limit: source.rate_limit,
                           association_method: source.association_method || 'search',
                           disease_ids: source.disease_ids || [],
+                          daily_limit: source.daily_limit || 100,
+                          weekly_limit: source.weekly_limit || 500,
                           config: source.config || {}
                         });
                       }}
