@@ -411,6 +411,25 @@ class BaseScraper(ABC):
     
     async def scrape(self, disease_ids: List[int], disease_names: List[str], **kwargs) -> Dict[str, Any]:
         """Main scraping method with configuration hierarchy"""
+        # If no diseases specified for search sources, get ALL active diseases
+        if not disease_ids:
+            async with get_pg_connection() as conn:
+                # First check if this is a search-based source
+                source_info = await conn.fetchrow("""
+                    SELECT association_method FROM sources WHERE id = $1
+                """, self.source_id)
+                
+                if source_info and source_info['association_method'] == 'search':
+                    # Get all diseases for search sources
+                    all_diseases = await conn.fetch("""
+                        SELECT id, name FROM diseases ORDER BY name
+                    """)
+                    
+                    if all_diseases:
+                        disease_ids = [row['id'] for row in all_diseases]
+                        disease_names = [row['name'] for row in all_diseases]
+                        logger.info(f"Search source {self.source_name} using all {len(disease_ids)} active diseases")
+        
         # Get source info to determine association method
         async with get_pg_connection() as conn:
             source = await conn.fetchrow("""
@@ -438,17 +457,23 @@ class BaseScraper(ABC):
                     logger.warning(f"Fixed source {self.source_name} has no linked diseases")
                     return {"documents_found": 0, "documents_processed": 0, "errors": []}
                 
-                # Filter to only requested diseases that are linked
-                linked_ids = {row['disease_id'] for row in linked}
-                filtered_ids = [did for did in disease_ids if did in linked_ids]
-                
-                if not filtered_ids:
-                    logger.info(f"Fixed source {self.source_name} not linked to any requested diseases")
-                    return {"documents_found": 0, "documents_processed": 0, "errors": []}
-                
-                # Update disease lists to only linked ones
-                disease_ids = filtered_ids
-                disease_names = [row['disease_name'] for row in linked if row['disease_id'] in filtered_ids]
+                # If no specific diseases requested, use ALL linked diseases
+                if not disease_ids:
+                    disease_ids = [row['disease_id'] for row in linked]
+                    disease_names = [row['disease_name'] for row in linked]
+                    logger.info(f"Fixed source {self.source_name} using all linked diseases: {disease_names}")
+                else:
+                    # Filter to only requested diseases that are linked
+                    linked_ids = {row['disease_id'] for row in linked}
+                    filtered_ids = [did for did in disease_ids if did in linked_ids]
+                    
+                    if not filtered_ids:
+                        logger.info(f"Fixed source {self.source_name} not linked to any requested diseases")
+                        return {"documents_found": 0, "documents_processed": 0, "errors": []}
+                    
+                    # Update disease lists to only linked ones
+                    disease_ids = filtered_ids
+                    disease_names = [row['disease_name'] for row in linked if row['disease_id'] in filtered_ids]
                 logger.info(f"Fixed source {self.source_name} will scrape for diseases: {disease_names}")
         
         # Store disease IDs for linking documents

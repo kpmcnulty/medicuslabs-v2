@@ -2,6 +2,7 @@ from typing import List, Dict, Any
 import asyncio
 import json
 from loguru import logger
+from celery import group
 
 from . import celery_app
 from scrapers.clinicaltrials import ClinicalTrialsScraper
@@ -196,7 +197,7 @@ def scrape_all_sources(**kwargs) -> Dict[str, Any]:
     
     # Launch all tasks in parallel
     logger.info(f"Running {len(tasks_to_run)} scraper tasks in parallel")
-    group_result = celery_app.group(tasks_to_run).apply_async()
+    group_result = group(tasks_to_run).apply_async()
     
     # Wait for all tasks to complete
     results = group_result.get()
@@ -238,7 +239,7 @@ def scrape_incremental_all(**kwargs) -> Dict[str, Any]:
     kwargs['is_incremental'] = True
     
     # Launch tasks in parallel with incremental flag
-    group_result = celery_app.group([
+    group_result = group([
         scrape_clinicaltrials.s(**kwargs),
         scrape_pubmed.s(**kwargs),
         scrape_reddit.s(**kwargs)
