@@ -93,8 +93,11 @@ async def list_schedules() -> List[ScheduleResponse]:
                 "day_of_month": str(schedule.day_of_month),
                 "month_of_year": str(schedule.month_of_year)
             }
-        else:
+        elif hasattr(schedule, "total_seconds"):  # interval
             schedule_dict["schedule"] = {"type": "interval", "seconds": schedule.total_seconds()}
+        else:
+            # Fallback for unknown schedule types
+            schedule_dict["schedule"] = {"type": "unknown", "value": str(schedule)}
         
         # TODO: Get last run info from Celery beat database
         schedule_dict["last_run_at"] = None
@@ -130,7 +133,7 @@ async def get_schedule(schedule_name: str) -> ScheduleResponse:
     
     # Convert schedule
     schedule = config.get("schedule")
-    if hasattr(schedule, "_fields"):
+    if hasattr(schedule, "_fields"):  # crontab
         schedule_dict["schedule"] = {
             "type": "crontab",
             "minute": str(schedule.minute),
@@ -139,8 +142,11 @@ async def get_schedule(schedule_name: str) -> ScheduleResponse:
             "day_of_month": str(schedule.day_of_month),
             "month_of_year": str(schedule.month_of_year)
         }
-    else:
+    elif hasattr(schedule, "total_seconds"):  # interval
         schedule_dict["schedule"] = {"type": "interval", "seconds": schedule.total_seconds()}
+    else:
+        # Fallback for unknown schedule types
+        schedule_dict["schedule"] = {"type": "unknown", "value": str(schedule)}
     
     return ScheduleResponse(**schedule_dict)
 

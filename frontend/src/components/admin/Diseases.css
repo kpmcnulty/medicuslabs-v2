@@ -286,6 +286,16 @@
   background: #1565c0;
 }
 
+.btn-danger {
+  background: #e74c3c;
+  color: white;
+  border-color: #e74c3c;
+}
+
+.btn-danger:hover {
+  background: #c0392b;
+}
+
 /* Disease Details */
 .disease-details {
   display: grid;

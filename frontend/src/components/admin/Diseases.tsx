@@ -105,18 +105,27 @@ const Diseases: React.FC = () => {
     }
   };
 
-  const handleMerge = async (sourceId: number, targetId: number) => {
-    if (window.confirm('Are you sure you want to merge these diseases? This cannot be undone.')) {
+  const handleDeleteDisease = async (disease: Disease) => {
+    const confirmMessage = disease.document_count > 0
+      ? `⚠️ Cannot Delete Disease: ${disease.name}\n\nThis disease has ${disease.document_count} associated documents.\nRemove all document associations before deleting.`
+      : `⚠️ Delete Disease: ${disease.name}\n\nThis will permanently delete the disease.\n\nContinue?`;
+    
+    if (disease.document_count > 0) {
+      alert(confirmMessage);
+      return;
+    }
+    
+    if (window.confirm(confirmMessage)) {
       try {
-        const result = await adminApi.mergeDiseases(sourceId, targetId);
-        alert(result.message);
+        const result = await adminApi.deleteDisease(disease.id);
+        alert(`✅ ${result.message}`);
         await loadDiseases();
-        setSelectedDisease(null);
       } catch (err: any) {
-        alert(err.response?.data?.detail || 'Failed to merge diseases');
+        alert(`❌ Failed to delete disease\n\n${err.response?.data?.detail || err.message}`);
       }
     }
   };
+
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Never';
@@ -199,16 +208,13 @@ const Diseases: React.FC = () => {
               >
                 Details
               </button>
-              {disease.document_count === 0 && (
-                <button
-                  onClick={() => handleMerge(disease.id, 
-                    parseInt(window.prompt('Enter target disease ID to merge into:') || '0')
-                  )}
-                  className="btn-sm btn-danger"
-                >
-                  Merge
-                </button>
-              )}
+              <button
+                onClick={() => handleDeleteDisease(disease)}
+                className="btn-sm btn-danger"
+                title="Delete this disease"
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}

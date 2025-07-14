@@ -174,14 +174,6 @@ const SourceTypeSelector: React.FC<SourceTypeSelectorProps> = ({
                 {type.description}
               </div>
               
-              <div className="type-sources">
-                {type.sources.map(source => (
-                  <span key={source} className="source-chip">
-                    {source}
-                  </span>
-                ))}
-              </div>
-              
               <div className="type-footer">
                 <span className="document-count">
                   {documentCount} documents

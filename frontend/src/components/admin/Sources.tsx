@@ -85,38 +85,40 @@ const Sources: React.FC = () => {
   const handleTestConnection = async (sourceId: number) => {
     try {
       const result = await adminApi.testSourceConnection(sourceId);
-      alert(`Connection test: ${result.status}\n${result.message}`);
+      alert(`✅ Connection Test Results\n\nStatus: ${result.status}\nMessage: ${result.message}\n\nThis verifies that the scraper can connect to the data source.`);
     } catch (err) {
-      alert('Connection test failed');
+      alert('❌ Connection Test Failed\n\nThe scraper could not connect to this data source. Check the configuration and try again.');
     }
   };
 
   const handleTriggerScrape = async (source: Source) => {
     try {
-      // For linked sources, we don't need to select diseases
-      if (source.association_method === 'linked') {
-        if (window.confirm(`Start scraping ${source.name}? This will scrape data for: ${source.disease_names.join(', ')}`)) {
-          const result = await adminApi.triggerSourceScrape(source.id);
-          alert(`Scraping started!\n\nJob ID: ${result.job_id}\n${result.message}`);
-        }
-      } else {
-        // For search sources, let user select diseases
-        const selectedDiseases = window.prompt(
-          `Enter disease IDs to scrape (comma-separated):\n\nAvailable diseases:\n${
-            diseases.map(d => `${d.id}: ${d.name}`).join('\n')
-          }`
-        );
-        
-        if (selectedDiseases) {
-          const diseaseIds = selectedDiseases.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
-          if (diseaseIds.length > 0) {
-            const result = await adminApi.triggerSourceScrape(source.id, diseaseIds);
-            alert(`Scraping started!\n\nJob ID: ${result.job_id}\n${result.message}`);
-          }
-        }
+      const confirmMessage = source.association_method === 'linked' && source.disease_names.length > 0
+        ? `🔄 Run Scraper for ${source.name}\n\nThis will collect new data for:\n${source.disease_names.join(', ')}\n\nNote: This process may take several minutes depending on the amount of data.`
+        : `🔄 Run Scraper for ${source.name}\n\nThis will run the scraper with its current configuration.\n\nNote: This process may take several minutes depending on the amount of data.`;
+      
+      if (window.confirm(confirmMessage)) {
+        const result = await adminApi.triggerSourceScrape(source.id);
+        alert(`✅ Scraper Started Successfully\n\nJob ID: ${result.job_id}\n${result.message}\n\nYou can monitor progress in the Jobs section.`);
       }
     } catch (err: any) {
-      alert(`Failed to trigger scrape: ${err.response?.data?.detail || err.message}`);
+      alert(`❌ Failed to Start Scraper\n\n${err.response?.data?.detail || err.message}`);
+    }
+  };
+
+  const handleDeleteSource = async (source: Source) => {
+    const confirmMessage = source.document_count > 0
+      ? `⚠️ Delete Source: ${source.name}\n\nThis source has ${source.document_count} documents.\nThe source will be deactivated instead of deleted.\n\nContinue?`
+      : `⚠️ Delete Source: ${source.name}\n\nThis will permanently delete the source.\n\nContinue?`;
+    
+    if (window.confirm(confirmMessage)) {
+      try {
+        const result = await adminApi.deleteSource(source.id);
+        alert(`✅ ${result.message}`);
+        await loadSources();
+      } catch (err: any) {
+        alert(`❌ Failed to delete source\n\n${err.response?.data?.detail || err.message}`);
+      }
     }
   };
 
@@ -242,15 +244,24 @@ const Sources: React.FC = () => {
                     <button
                       onClick={() => handleTestConnection(source.id)}
                       className="btn-sm"
+                      title="Test if the scraper can connect to this data source"
                     >
-                      Test
+                      Test Connection
                     </button>
                     <button
                       onClick={() => handleTriggerScrape(source)}
-                      className="btn-sm"
+                      className="btn-sm btn-primary"
                       disabled={!source.is_active}
+                      title={source.is_active ? 'Run the scraper to collect new data' : 'Activate source first'}
                     >
-                      Scrape
+                      Run Scraper
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSource(source)}
+                      className="btn-sm btn-danger"
+                      title="Delete this source"
+                    >
+                      Delete
                     </button>
                   </div>
                 </td>
@@ -390,7 +401,7 @@ const Sources: React.FC = () => {
                   name="config"
                   rows={6}
                   defaultValue={JSON.stringify(formData.config, null, 2)}
-                  placeholder={'{\n  "subreddit": "MultipleSclerosis",\n  "post_limit": 50\n}'}
+                  placeholder={'{\n  "key": "value",\n  "limit": 50\n}'}
                   style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
                 />
               </div>

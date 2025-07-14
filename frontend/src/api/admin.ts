@@ -160,10 +160,6 @@ class AdminApi {
     return response.data;
   }
 
-  async mergeDiseases(sourceId: number, targetId: number) {
-    const response = await this.client.post(`/api/admin/diseases/${sourceId}/merge/${targetId}`);
-    return response.data;
-  }
 
   // Jobs
   async getJobs(params?: {

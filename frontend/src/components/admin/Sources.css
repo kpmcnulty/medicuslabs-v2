@@ -44,6 +44,16 @@
   background-color: #2980b9;
 }
 
+.btn-danger {
+  background-color: #e74c3c;
+  color: white;
+  transition: background-color 0.3s;
+}
+
+.btn-danger:hover {
+  background-color: #c0392b;
+}
+
 .sources-filters {
   display: flex;
   gap: 1rem;

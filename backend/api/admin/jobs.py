@@ -26,7 +26,7 @@ class JobResponse(BaseModel):
     error_details: Optional[List[Dict[str, Any]]] = None
     config: Optional[Dict[str, Any]] = None
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None  # Make it optional since crawl_jobs doesn't have this column
     duration_seconds: Optional[float] = None
 
 class TriggerJobRequest(BaseModel):
@@ -253,9 +253,18 @@ async def cancel_job(job_id: int) -> Dict[str, str]:
             WHERE id = $1
         """, job_id)
         
-        # TODO: Actually cancel the Celery task
+        # TODO: To properly cancel Celery tasks:
+        # 1. Add 'task_id' column to crawl_jobs table to store Celery task ID
+        # 2. When triggering a job, store the Celery task ID in the database
+        # 3. Here, retrieve the task_id and use: celery_app.control.revoke(task_id, terminate=True)
+        # Example:
+        # from tasks import celery_app
+        # if job['task_id']:
+        #     celery_app.control.revoke(job['task_id'], terminate=True)
         
-        return {"message": "Job cancelled successfully"}
+        logger.warning(f"Job {job_id} marked as cancelled, but Celery task may still be running")
+        
+        return {"message": "Job cancelled successfully (Note: Celery task may continue running)"}
 
 @router.get("/stats/summary", dependencies=[Depends(get_current_admin)])
 async def get_job_stats(

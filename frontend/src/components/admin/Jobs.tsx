@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { adminApi } from '../../api/admin';
 import StatusBadge from './shared/StatusBadge';
 import LoadingSpinner from './shared/LoadingSpinner';
@@ -72,7 +72,18 @@ const Jobs: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timer | null>(null);
+  const [isPageVisible, setIsPageVisible] = useState(true);
+  const refreshIntervalRef = useRef<NodeJS.Timer | null>(null);
+  
+  // Trigger dialog state
+  const [sources, setSources] = useState<any[]>([]);
+  const [diseases, setDiseases] = useState<any[]>([]);
+  const [triggerForm, setTriggerForm] = useState({
+    source_id: 0,
+    disease_ids: [] as number[],
+    job_type: 'full' as 'full' | 'incremental',
+    options: {}
+  });
 
   const loadJobs = useCallback(async () => {
     try {
@@ -96,30 +107,64 @@ const Jobs: React.FC = () => {
       console.error('Failed to load stats:', err);
     }
   };
+  
+  const loadSourcesAndDiseases = async () => {
+    try {
+      const [sourcesData, diseasesData] = await Promise.all([
+        adminApi.getSources(),
+        adminApi.getDiseases({ limit: 1000 })
+      ]);
+      // Filter only active sources
+      const activeSources = sourcesData.filter((source: any) => source.is_active);
+      setSources(activeSources);
+      setDiseases(diseasesData);
+    } catch (err) {
+      console.error('Failed to load sources/diseases:', err);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      await Promise.all([loadJobs(), loadStats()]);
+      await Promise.all([loadJobs(), loadStats(), loadSourcesAndDiseases()]);
       setLoading(false);
     };
     
     fetchData();
   }, [loadJobs]);
 
+  // Handle page visibility changes
   useEffect(() => {
-    if (autoRefresh) {
+    const handleVisibilityChange = () => {
+      setIsPageVisible(!document.hidden);
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  useEffect(() => {
+    // Clear any existing interval
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current);
+      refreshIntervalRef.current = null;
+    }
+    
+    if (autoRefresh && isPageVisible) {
       const interval = setInterval(() => {
         loadJobs();
       }, 5000); // Refresh every 5 seconds
-      setRefreshInterval(interval);
-      
-      return () => clearInterval(interval);
-    } else if (refreshInterval) {
-      clearInterval(refreshInterval);
-      setRefreshInterval(null);
+      refreshIntervalRef.current = interval;
     }
-  }, [autoRefresh, loadJobs, refreshInterval]);
+    
+    // Cleanup on unmount or dependency change
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+    };
+  }, [autoRefresh, isPageVisible, loadJobs]);
 
   const handleCancelJob = async () => {
     if (!cancelConfirm) return;
@@ -130,6 +175,40 @@ const Jobs: React.FC = () => {
       await loadJobs();
     } catch (err: any) {
       alert(err.response?.data?.detail || 'Failed to cancel job');
+    }
+  };
+  
+  const handleTriggerJob = async () => {
+    try {
+      if (triggerForm.source_id === 0) {
+        // Bulk job for all sources
+        const result = await adminApi.triggerBulkJobs({
+          source_ids: [],
+          disease_ids: triggerForm.disease_ids,
+          job_type: triggerForm.job_type,
+          options: triggerForm.options
+        });
+        alert(`✅ Bulk job triggered successfully!\n\nGroup ID: ${result.group_id}\nJob Type: ${result.job_type}\nSources: ${result.sources.join(', ')}\nDiseases: ${result.diseases.join(', ')}`);
+      } else {
+        // Single source job
+        const result = await adminApi.triggerJob({
+          source_id: triggerForm.source_id,
+          disease_ids: triggerForm.disease_ids,
+          options: triggerForm.options
+        });
+        alert(`✅ Job triggered successfully!\n\nJob ID: ${result.job_id}\nSource: ${result.source}\nDiseases: ${result.diseases.join(', ')}`);
+      }
+      
+      setShowTriggerDialog(false);
+      setTriggerForm({
+        source_id: 0,
+        disease_ids: [],
+        job_type: 'full',
+        options: {}
+      });
+      loadJobs();
+    } catch (err: any) {
+      alert(`❌ Failed to trigger job\n\n${err.response?.data?.detail || err.message}`);
     }
   };
 
@@ -235,6 +314,15 @@ const Jobs: React.FC = () => {
             </option>
           ))}
         </select>
+        
+        <label className="auto-refresh-toggle">
+          <input
+            type="checkbox"
+            checked={autoRefresh}
+            onChange={(e) => setAutoRefresh(e.target.checked)}
+          />
+          Auto-refresh (5s)
+        </label>
         
         <button 
           className="btn-secondary"
@@ -398,9 +486,70 @@ const Jobs: React.FC = () => {
         <div className="modal-overlay" onClick={() => setShowTriggerDialog(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>Trigger New Scraping Job</h2>
-            <p>Job triggering interface coming soon...</p>
+            
+            <div className="form-group">
+              <label>Source</label>
+              <select
+                value={triggerForm.source_id}
+                onChange={(e) => setTriggerForm({ ...triggerForm, source_id: parseInt(e.target.value) })}
+              >
+                <option value="0">All Active Sources</option>
+                {sources.map(source => (
+                  <option key={source.id} value={source.id}>
+                    {source.name} ({source.association_method === 'linked' ? '🔗 Linked' : '🔍 Search'})
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="form-group">
+              <label>Diseases</label>
+              <select
+                multiple
+                value={triggerForm.disease_ids.map(String)}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.selectedOptions, option => parseInt(option.value));
+                  setTriggerForm({ ...triggerForm, disease_ids: selected });
+                }}
+                style={{ height: '200px' }}
+              >
+                {diseases.map(disease => (
+                  <option key={disease.id} value={disease.id}>
+                    {disease.name}
+                  </option>
+                ))}
+              </select>
+              <small>Hold Ctrl/Cmd to select multiple diseases. Leave empty for all diseases.</small>
+            </div>
+            
+            {triggerForm.source_id === 0 && (
+              <div className="form-group">
+                <label>Job Type</label>
+                <select
+                  value={triggerForm.job_type}
+                  onChange={(e) => setTriggerForm({ ...triggerForm, job_type: e.target.value as 'full' | 'incremental' })}
+                >
+                  <option value="full">Full Scrape</option>
+                  <option value="incremental">Incremental Update</option>
+                </select>
+              </div>
+            )}
+            
             <div className="form-buttons">
-              <button onClick={() => setShowTriggerDialog(false)}>Close</button>
+              <button className="btn-primary" onClick={handleTriggerJob}>
+                Start Scraping
+              </button>
+              <button onClick={() => {
+                setShowTriggerDialog(false);
+                setTriggerForm({
+                  source_id: 0,
+                  disease_ids: [],
+                  job_type: 'full',
+                  options: {}
+                });
+              }}>
+                Cancel
+              </button>
             </div>
           </div>
         </div>

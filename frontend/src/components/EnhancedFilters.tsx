@@ -59,7 +59,7 @@ const EnhancedFilters: React.FC<EnhancedFiltersProps> = ({ onFiltersChange, load
 
   const loadFilterOptions = async () => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/search/filters/enhanced`);
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/search/filters`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
