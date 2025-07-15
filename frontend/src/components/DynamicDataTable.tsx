@@ -3,7 +3,6 @@ import {
   useReactTable,
   getCoreRowModel,
   getExpandedRowModel,
-  getFilteredRowModel,
   ColumnDef,
   flexRender,
   ExpandedState,
@@ -80,7 +79,6 @@ const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
         header: col.label,
         size: parseInt(col.width) || 100,
         enableColumnFilter: col.filterable !== false, // Enable filtering by default
-        filterFn: advancedFilter,
         cell: ({ getValue, row }) => {
           const value = getValue();
           
@@ -107,7 +105,6 @@ const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     state: {
       expanded,
       columnFilters,

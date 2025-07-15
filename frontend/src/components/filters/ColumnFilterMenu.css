@@ -1,0 +1,350 @@
+.column-filter-menu-container {
+  position: relative;
+  display: inline-block;
+}
+
+/* Filter button in header */
+.filter-menu-button {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #999;
+  transition: all 0.2s;
+  border-radius: 4px;
+}
+
+.filter-menu-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #666;
+}
+
+.filter-menu-button.active {
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+/* Dropdown menu */
+.filter-menu-dropdown {
+  position: fixed;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 320px;
+  max-width: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Position variations */
+.filter-menu-dropdown.position-center {
+  transform: translateX(-50%);
+}
+
+.filter-menu-dropdown.position-left {
+  transform: translateX(0);
+}
+
+.filter-menu-dropdown.position-right {
+  transform: translateX(-100%);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Menu header */
+.filter-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+  background: #f8f9fa;
+  border-radius: 8px 8px 0 0;
+}
+
+.filter-menu-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.close-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #666;
+}
+
+/* Quick presets section */
+.filter-presets {
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+  background: #fafbfc;
+}
+
+.preset-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-button {
+  padding: 4px 12px;
+  border: 1px solid #ddd;
+  border-radius: 16px;
+  background: white;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.preset-button:hover {
+  background: #f0f0f0;
+  border-color: #999;
+  color: #333;
+}
+
+/* Filter conditions */
+.filter-conditions {
+  padding: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+  min-height: 100px;
+}
+
+.filter-condition-item {
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.filter-condition-item:last-child {
+  margin-bottom: 0;
+}
+
+.join-operator-button {
+  display: block;
+  margin: 0 auto 8px;
+  padding: 2px 12px;
+  background: #e8f5e9;
+  border: 1px solid #4CAF50;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4CAF50;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.join-operator-button:hover {
+  background: #4CAF50;
+  color: white;
+}
+
+.condition-content {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.filter-condition-item.active .condition-content {
+  border-color: #4CAF50;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+.operator-select {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background: white;
+  cursor: pointer;
+  min-width: 140px;
+}
+
+.operator-select:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.filter-value-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background: white;
+}
+
+.filter-value-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.range-inputs {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.range-inputs .filter-value-input {
+  width: 50%;
+}
+
+.range-separator {
+  color: #666;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.no-value-needed {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #999;
+  font-style: italic;
+}
+
+.remove-condition-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  color: #999;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.remove-condition-button:hover {
+  background: #f44336;
+  border-color: #f44336;
+  color: white;
+}
+
+/* Add condition button */
+.add-condition-button {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  margin: 12px 16px 0;
+  width: calc(100% - 32px);
+  border: 1px dashed #ddd;
+  border-radius: 4px;
+  background: none;
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-condition-button:hover {
+  border-color: #4CAF50;
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.05);
+}
+
+/* Action buttons */
+.filter-menu-actions {
+  display: flex;
+  gap: 8px;
+  padding: 16px;
+  border-top: 1px solid #eee;
+  background: #f8f9fa;
+  border-radius: 0 0 8px 8px;
+}
+
+.clear-button,
+.cancel-button {
+  flex: 1;
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  color: #666;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clear-button:hover,
+.cancel-button:hover {
+  background: #f0f0f0;
+  border-color: #999;
+}
+
+.apply-button {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #4CAF50;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.apply-button:hover {
+  background: #45a049;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .filter-menu-dropdown {
+    min-width: 280px;
+    left: 0;
+    transform: none;
+  }
+  
+  .operator-select {
+    min-width: 120px;
+    font-size: 12px;
+  }
+}
