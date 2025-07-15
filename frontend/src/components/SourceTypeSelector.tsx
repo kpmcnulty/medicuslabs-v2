@@ -46,6 +46,12 @@ const CATEGORY_METADATA: Record<string, { label: string; icon: string; descripti
     icon: '👥',
     description: 'Patient experiences and community discussions',
     color: '#FF9800'
+  },
+  safety: {
+    label: 'Safety Data',
+    icon: '⚠️',
+    description: 'FDA adverse event reports and safety monitoring data',
+    color: '#F44336'
   }
 };
 
@@ -93,7 +99,7 @@ const SourceTypeSelector: React.FC<SourceTypeSelectorProps> = ({
           
           // Sort by category order
           types.sort((a, b) => {
-            const order = ['publications', 'trials', 'community'];
+            const order = ['publications', 'trials', 'community', 'safety'];
             return order.indexOf(a.id) - order.indexOf(b.id);
           });
           

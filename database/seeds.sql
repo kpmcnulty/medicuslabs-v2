@@ -6,35 +6,31 @@ INSERT INTO admin_users (username, password_hash) VALUES
 ('admin', '$2b$12$Fv3SKFQ8tbABF4zJ.6YHN.jKdmho5wPU1IE5DZAHrSeTk.ungVFvi')
 ON CONFLICT (username) DO NOTHING;
 
--- Insert diseases with search terms
+-- Insert diseases with comprehensive search terms
 INSERT INTO diseases (name, category, synonyms, search_terms) VALUES 
 ('Multiple Sclerosis', 'neurological', 
     ARRAY['MS', 'disseminated sclerosis', 'encephalomyelitis disseminata'],
     ARRAY['multiple sclerosis', 'MS', 'RRMS', 'PPMS', 'SPMS', 'relapsing remitting', 'primary progressive', 'secondary progressive']
 ),
-('Parkinson''s Disease', 'neurological', 
-    ARRAY['PD', 'paralysis agitans', 'shaking palsy'],
-    ARRAY['parkinsons', 'parkinson', 'parkinson''s', 'parkinson disease', 'PD', 'parkinsonism']
-),
-('Alzheimer''s Disease', 'neurological', 
-    ARRAY['AD', 'senile dementia'],
-    ARRAY['alzheimers', 'alzheimer', 'alzheimer''s', 'alzheimer disease', 'AD', 'dementia']
-),
 ('Amyotrophic Lateral Sclerosis', 'neurological', 
-    ARRAY['ALS', 'Lou Gehrig''s disease', 'motor neuron disease'],
-    ARRAY['ALS', 'lou gehrig', 'lou gehrig''s', 'amyotrophic lateral sclerosis', 'motor neuron disease']
+    ARRAY['ALS', 'Lou Gehrig''s disease', 'motor neuron disease', 'MND'],
+    ARRAY['ALS', 'amyotrophic lateral sclerosis', 'lou gehrig disease', 'lou gehrigs disease', 'motor neuron disease', 'MND', 'motor neurone disease']
 ),
-('Lupus', 'autoimmune', 
-    ARRAY['SLE', 'systemic lupus erythematosus'],
-    ARRAY['lupus', 'SLE', 'systemic lupus', 'systemic lupus erythematosus']
+('Acute Myeloid Leukemia', 'oncological', 
+    ARRAY['AML', 'acute myelogenous leukemia', 'acute nonlymphocytic leukemia', 'acute myeloblastic leukemia'],
+    ARRAY['AML', 'acute myeloid leukemia', 'acute myelogenous leukemia', 'acute nonlymphocytic leukemia', 'acute myeloblastic leukemia']
 ),
-('Diabetes Type 1', 'metabolic', 
-    ARRAY['T1D', 'juvenile diabetes', 'insulin-dependent diabetes'],
-    ARRAY['diabetes', 'diabetic', 'type 1 diabetes', 'T1D', 'diabetes mellitus', 'juvenile diabetes']
+('Alpha-1 Antitrypsin Deficiency', 'genetic', 
+    ARRAY['AATD', 'A1AT deficiency', 'AAT deficiency', 'alpha-1'],
+    ARRAY['alpha-1 antitrypsin deficiency', 'AATD', 'alpha-1', 'A1AT deficiency', 'AAT deficiency', 'alpha 1 antitrypsin']
 ),
-('Diabetes Type 2', 'metabolic', 
-    ARRAY['T2D', 'adult-onset diabetes', 'non-insulin-dependent diabetes'],
-    ARRAY['diabetes', 'diabetic', 'type 2 diabetes', 'T2D', 'diabetes mellitus', 'adult onset diabetes']
+('Fabry Disease', 'genetic', 
+    ARRAY['Anderson-Fabry disease', 'alpha-galactosidase A deficiency', 'Fabry''s disease'],
+    ARRAY['fabry disease', 'fabry', 'anderson-fabry disease', 'alpha-galactosidase A deficiency', 'fabrys disease']
+),
+('Phenylketonuria', 'genetic', 
+    ARRAY['PKU', 'phenylalanine hydroxylase deficiency', 'Folling disease', 'hyperphenylalaninemia'],
+    ARRAY['phenylketonuria', 'PKU', 'phenylalanine hydroxylase deficiency', 'folling disease', 'hyperphenylalaninemia']
 )
 ON CONFLICT (name) DO UPDATE SET
     category = EXCLUDED.category,
@@ -44,18 +40,34 @@ ON CONFLICT (name) DO UPDATE SET
 -- Insert sources
 INSERT INTO sources (name, category, base_url, scraper_type, association_method, rate_limit, config) VALUES 
 -- Search-based sources (search all diseases)
-('PubMed', 'publications', 'https://pubmed.ncbi.nlm.nih.gov/', 'pubmed_scraper', 'search', 10, 
-    '{"api_key": null, "max_results": 100, "sort_order": "relevance"}'::jsonb),
+('PubMed', 'publications', 'https://pubmed.ncbi.nlm.nih.gov/', 'pubmed_api', 'search', 10, 
+    '{"api_key": null}'::jsonb),
     
-('ClinicalTrials.gov', 'trials', 'https://clinicaltrials.gov/', 'clinicaltrials_scraper', 'search', 10,
-    '{"max_results": 50, "status_filter": ["Recruiting", "Active, not recruiting", "Completed"]}'::jsonb),
+('ClinicalTrials.gov', 'trials', 'https://clinicaltrials.gov/', 'clinicaltrials_api', 'search', 10,
+    '{}'::jsonb),
 
 -- Disease-specific community sources (linked to specific diseases)
-('r/MultipleSclerosis', 'community', 'https://www.reddit.com/r/MultipleSclerosis', 'reddit_scraper', 'linked', 60,
-    '{"subreddit": "MultipleSclerosis", "post_limit": 50, "include_comments": true, "time_filter": "month"}'::jsonb),
+('r/MultipleSclerosis', 'community', 'https://www.reddit.com/r/MultipleSclerosis', 'reddit_scraper', 'linked', 1,
+    '{"subreddit": "MultipleSclerosis", "sort_by": "new", "include_comments": true}'::jsonb),
     
-('r/ALS', 'community', 'https://www.reddit.com/r/ALS', 'reddit_scraper', 'linked', 60,
-    '{"subreddit": "ALS", "post_limit": 50, "include_comments": true, "time_filter": "month"}'::jsonb)
+('r/ALS', 'community', 'https://www.reddit.com/r/ALS', 'reddit_scraper', 'linked', 1,
+    '{"subreddit": "ALS", "sort_by": "new", "include_comments": true}'::jsonb),
+
+('r/leukemia', 'community', 'https://www.reddit.com/r/leukemia', 'reddit_scraper', 'linked', 1,
+    '{"subreddit": "leukemia", "sort_by": "new", "include_comments": true}'::jsonb),
+
+('r/AlphaOne', 'community', 'https://www.reddit.com/r/AlphaOne', 'reddit_scraper', 'linked', 1,
+    '{"subreddit": "AlphaOne", "sort_by": "new", "include_comments": true}'::jsonb),
+
+('r/FabryDisease', 'community', 'https://www.reddit.com/r/FabryDisease', 'reddit_scraper', 'linked', 1,
+    '{"subreddit": "FabryDisease", "sort_by": "new", "include_comments": true}'::jsonb),
+
+('r/PKU', 'community', 'https://www.reddit.com/r/PKU', 'reddit_scraper', 'linked', 1,
+    '{"subreddit": "PKU", "sort_by": "new", "include_comments": true}'::jsonb),
+
+-- Safety data source (search all diseases)
+('FDA FAERS', 'safety', 'https://api.fda.gov/drug/event.json', 'faers_api', 'search', 1,
+    '{"api_key": null, "update_window_hours": 168, "max_results_per_disease": 100}'::jsonb)
 
 ON CONFLICT (name) DO UPDATE SET
     category = EXCLUDED.category,
@@ -70,5 +82,13 @@ INSERT INTO source_diseases (source_id, disease_id) VALUES
 ((SELECT id FROM sources WHERE name = 'r/MultipleSclerosis'), 
  (SELECT id FROM diseases WHERE name = 'Multiple Sclerosis')),
 ((SELECT id FROM sources WHERE name = 'r/ALS'), 
- (SELECT id FROM diseases WHERE name = 'Amyotrophic Lateral Sclerosis'))
+ (SELECT id FROM diseases WHERE name = 'Amyotrophic Lateral Sclerosis')),
+((SELECT id FROM sources WHERE name = 'r/leukemia'), 
+ (SELECT id FROM diseases WHERE name = 'Acute Myeloid Leukemia')),
+((SELECT id FROM sources WHERE name = 'r/AlphaOne'), 
+ (SELECT id FROM diseases WHERE name = 'Alpha-1 Antitrypsin Deficiency')),
+((SELECT id FROM sources WHERE name = 'r/FabryDisease'), 
+ (SELECT id FROM diseases WHERE name = 'Fabry Disease')),
+((SELECT id FROM sources WHERE name = 'r/PKU'), 
+ (SELECT id FROM diseases WHERE name = 'Phenylketonuria'))
 ON CONFLICT DO NOTHING;

@@ -368,5 +368,3 @@ curl http://localhost:8000/health  # Test API health
 - Report issues: [GitHub Issues](https://github.com/your-repo/medicuslabs/issues)
 
 ---
-
-**Built with ❤️ for medical researchers and healthcare professionals**

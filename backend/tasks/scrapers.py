@@ -2,12 +2,13 @@ from typing import List, Dict, Any
 import asyncio
 import json
 from loguru import logger
-from celery import group
+from celery import group, chord
 
 from . import celery_app
 from scrapers.clinicaltrials import ClinicalTrialsScraper
 from scrapers.pubmed import PubMedScraper
 from scrapers.reddit import RedditScraper
+from scrapers.faers import FAERSScraper
 
 @celery_app.task(name="scrape_clinicaltrials")
 def scrape_clinicaltrials(**kwargs) -> Dict[str, Any]:
@@ -103,6 +104,48 @@ def scrape_reddit(**kwargs) -> Dict[str, Any]:
     finally:
         loop.close()
 
+@celery_app.task(name="scrape_faers")
+def scrape_faers(**kwargs) -> Dict[str, Any]:
+    """Celery task to scrape FDA FAERS"""
+    disease_ids = kwargs.pop('disease_ids', [])
+    disease_names = kwargs.pop('disease_names', [])
+    job_id = kwargs.pop('job_id', None)
+    source_id = kwargs.pop('source_id', None)
+    source_name = kwargs.pop('source_name', 'FDA FAERS')
+    
+    logger.info(f"Starting FDA FAERS scrape for diseases: {disease_names} (IDs: {disease_ids})")
+    
+    async def run_scraper():
+        # Get source_id from database if not provided
+        if not source_id:
+            from core.database import get_pg_connection
+            async with get_pg_connection() as conn:
+                result = await conn.fetchrow(
+                    "SELECT id FROM sources WHERE scraper_type = 'faers_api' LIMIT 1"
+                )
+                if result:
+                    actual_source_id = result['id']
+                else:
+                    raise ValueError("No FAERS source found in database")
+        else:
+            actual_source_id = source_id
+            
+        async with FAERSScraper(source_id=actual_source_id, source_name=source_name) as scraper:
+            # Set the job_id if provided
+            if job_id:
+                scraper.job_id = job_id
+            return await scraper.scrape(disease_ids, disease_names, **kwargs)
+    
+    # Run async scraper in sync context
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        result = loop.run_until_complete(run_scraper())
+        logger.info(f"FDA FAERS scrape completed: {result}")
+        return result
+    finally:
+        loop.close()
+
 @celery_app.task(name="scrape_all_sources")
 def scrape_all_sources(**kwargs) -> Dict[str, Any]:
     """Scrape ALL active sources from the database"""
@@ -151,6 +194,7 @@ def scrape_all_sources(**kwargs) -> Dict[str, Any]:
         'clinicaltrials_api': scrape_clinicaltrials,
         'pubmed_api': scrape_pubmed,
         'reddit_scraper': scrape_reddit,
+        'faers_api': scrape_faers,
         'web_scraper': scrape_forum
     }
     
@@ -195,36 +239,22 @@ def scrape_all_sources(**kwargs) -> Dict[str, Any]:
             }
         }
     
-    # Launch all tasks in parallel
-    logger.info(f"Running {len(tasks_to_run)} scraper tasks in parallel")
-    group_result = group(tasks_to_run).apply_async()
+    # Queue all tasks to Redis without blocking
+    logger.info(f"Queuing {len(tasks_to_run)} scraper tasks")
     
-    # Wait for all tasks to complete
-    results = group_result.get()
+    task_ids = []
+    for task in tasks_to_run:
+        # Queue each task individually to Redis
+        result = task.apply_async()
+        task_ids.append(result.id)
+        logger.info(f"Queued task {result.id}")
     
-    # Aggregate results (handle both formats: documents_found/processed and total_found/processed)
-    total_found = sum(
-        r.get("documents_found", r.get("total_found", 0)) if isinstance(r, dict) else 0 
-        for r in results
-    )
-    total_processed = sum(
-        r.get("documents_processed", r.get("total_processed", 0)) if isinstance(r, dict) else 0 
-        for r in results
-    )
-    total_errors = sum(
-        len(r.get("errors", [])) if isinstance(r, dict) and isinstance(r.get("errors"), list) 
-        else r.get("errors", 0) if isinstance(r, dict) else 0 
-        for r in results
-    )
-    
+    # Return immediately - tasks are now in Redis queue
     return {
-        "results": results,
-        "summary": {
-            "total_documents_found": total_found,
-            "total_documents_processed": total_processed,
-            "total_errors": total_errors,
-            "sources_processed": len(results)
-        }
+        "task_ids": task_ids,
+        "sources_count": len(tasks_to_run),
+        "status": "queued",
+        "message": f"Queued {len(tasks_to_run)} scraper tasks to Redis"
     }
 
 @celery_app.task(name="scrape_incremental_all")
@@ -239,26 +269,20 @@ def scrape_incremental_all(**kwargs) -> Dict[str, Any]:
     kwargs['is_incremental'] = True
     
     # Launch tasks in parallel with incremental flag
-    group_result = group([
+    job_group = group([
         scrape_clinicaltrials.s(**kwargs),
         scrape_pubmed.s(**kwargs),
-        scrape_reddit.s(**kwargs)
-    ]).apply_async()
+        scrape_reddit.s(**kwargs),
+        scrape_faers.s(**kwargs)
+    ])
+    group_result = job_group.apply_async()
     
-    # Wait for all tasks to complete
-    results = group_result.get()
-    
-    # Aggregate results
-    total_found = sum(r.get("documents_found", 0) for r in results)
-    total_processed = sum(r.get("documents_processed", 0) for r in results)
-    total_errors = sum(r.get("errors", 0) for r in results)
-    
+    # Return immediately with task IDs
     return {
-        "results": results,
-        "summary": {
-            "total_documents_found": total_found,
-            "total_documents_processed": total_processed,
-            "total_errors": total_errors,
-            "type": "incremental"
-        }
+        "group_id": group_result.id,
+        "task_ids": [r.id for r in group_result.results],
+        "sources_count": 4,
+        "status": "started",
+        "type": "incremental",
+        "message": "Started incremental scrape for all primary sources"
     }

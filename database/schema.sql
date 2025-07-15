@@ -41,7 +41,7 @@ CREATE TABLE diseases (
 CREATE TABLE sources (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
-    category VARCHAR(50) NOT NULL CHECK (category IN ('publications', 'trials', 'community')),
+    category VARCHAR(50) NOT NULL CHECK (category IN ('publications', 'trials', 'community', 'safety')),
     base_url TEXT,
     scraper_type VARCHAR(100), -- pubmed_api, clinicaltrials_api, reddit_scraper, etc.
     rate_limit INTEGER DEFAULT 10,

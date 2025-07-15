@@ -29,23 +29,20 @@ def update_all_sources() -> Dict[str, Any]:
     # Import here to avoid circular imports
     from tasks.scrapers import scrape_all_sources
     
-    # Run update for ALL active sources with NO limits
-    # Each scraper will get all available new/updated content
-    result = scrape_all_sources.apply_async(
-        kwargs={
-            'disease_ids': [],  # Empty = use all configured diseases
-            'disease_names': [],
-            'options': {
-                'limit': None,  # No limit - get everything
-                'incremental': True,  # Only new/updated since last run
-            }
+    # Call the function directly (not as a subtask) since we're already in a task
+    result = scrape_all_sources(
+        disease_ids=[],  # Empty = use all configured diseases
+        disease_names=[],
+        options={
+            'limit': None,  # No limit - get everything
+            'incremental': True,  # Only new/updated since last run
         }
     )
     
     return {
-        "task_id": result.id,
         "started_at": datetime.now().isoformat(),
-        "message": "Update all sources task triggered - fetching ALL available data"
+        "message": "Update all sources task triggered - fetching ALL available data",
+        **result  # Include task_ids and other info
     }
 
 @shared_task  

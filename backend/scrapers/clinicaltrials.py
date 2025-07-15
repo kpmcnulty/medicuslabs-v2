@@ -25,11 +25,11 @@ class ClinicalTrialsScraper(BaseScraper):
         # Check for incremental update parameters
         since_date = kwargs.get('since_date')
         
-        while len(results) < max_results:
+        while max_results is None or len(results) < max_results:
             # Build query parameters
             params = {
                 "query.cond": disease_term,
-                "pageSize": min(100, max_results - len(results)),
+                "pageSize": 100 if max_results is None else min(100, max_results - len(results)),
                 "format": "json",
                 "markupFormat": "markdown",  # Get markdown formatted text
                 "sort": "LastUpdatePostDate"  # Sort by update date for incremental

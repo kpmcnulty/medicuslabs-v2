@@ -130,14 +130,14 @@ class BaseScraper(ABC):
         async with get_pg_connection() as conn:
             result = await conn.fetchrow(
                 """
-                SELECT default_config
+                SELECT config
                 FROM sources
                 WHERE id = $1
                 """,
                 self.source_id
             )
-            if result and result['default_config']:
-                config = result['default_config']
+            if result and result['config']:
+                config = result['config']
                 # Handle case where asyncpg returns JSONB as string
                 if isinstance(config, str):
                     config = json.loads(config)
@@ -443,8 +443,8 @@ class BaseScraper(ABC):
             
             association_method = source['association_method'] or 'search'
         
-        # For fixed sources, get their linked diseases
-        if association_method == 'fixed':
+        # For linked sources (like Reddit), get their linked diseases
+        if association_method == 'linked':
             async with get_pg_connection() as conn:
                 linked = await conn.fetch("""
                     SELECT sd.disease_id, d.name as disease_name
@@ -454,27 +454,27 @@ class BaseScraper(ABC):
                 """, self.source_id)
                 
                 if not linked:
-                    logger.warning(f"Fixed source {self.source_name} has no linked diseases")
+                    logger.warning(f"Linked source {self.source_name} has no linked diseases")
                     return {"documents_found": 0, "documents_processed": 0, "errors": []}
                 
                 # If no specific diseases requested, use ALL linked diseases
                 if not disease_ids:
                     disease_ids = [row['disease_id'] for row in linked]
                     disease_names = [row['disease_name'] for row in linked]
-                    logger.info(f"Fixed source {self.source_name} using all linked diseases: {disease_names}")
+                    logger.info(f"Linked source {self.source_name} using all linked diseases: {disease_names}")
                 else:
                     # Filter to only requested diseases that are linked
                     linked_ids = {row['disease_id'] for row in linked}
                     filtered_ids = [did for did in disease_ids if did in linked_ids]
                     
                     if not filtered_ids:
-                        logger.info(f"Fixed source {self.source_name} not linked to any requested diseases")
+                        logger.info(f"Linked source {self.source_name} not linked to any requested diseases")
                         return {"documents_found": 0, "documents_processed": 0, "errors": []}
                     
                     # Update disease lists to only linked ones
                     disease_ids = filtered_ids
                     disease_names = [row['disease_name'] for row in linked if row['disease_id'] in filtered_ids]
-                logger.info(f"Fixed source {self.source_name} will scrape for diseases: {disease_names}")
+                logger.info(f"Linked source {self.source_name} will scrape for diseases: {disease_names}")
         
         # Store disease IDs for linking documents
         self.disease_ids = disease_ids
@@ -491,8 +491,8 @@ class BaseScraper(ABC):
         # Determine if this is an incremental update
         is_incremental = kwargs.get('is_incremental', False)
         
-        # Get limit from configuration - but default to None (no limit)
-        # Individual scrapers should respect API rate limits but get ALL available data
+        # Get limit from configuration - default to None (no limit)
+        # Let each API give us everything it has
         limit = self.get_config_value('limit', kwargs, job_config, source_config, None)
         
         # Pass configuration to search
@@ -502,11 +502,11 @@ class BaseScraper(ABC):
         total_processed = 0
         
         try:
-            if self.association_method == 'fixed':
-                # Fixed sources: scrape everything, no search terms
-                logger.info(f"Scraping all content from fixed source {self.source_name}")
+            if self.association_method == 'linked':
+                # Linked sources: scrape everything, no search terms needed
+                logger.info(f"Scraping all content from linked source {self.source_name}")
                 
-                # For fixed sources, we pass empty string or None as search term
+                # For linked sources, we pass empty string or None as search term
                 results = await self.search("", **kwargs)
                 total_found += len(results)
                 
@@ -539,8 +539,11 @@ class BaseScraper(ABC):
                         })
             else:
                 # Search sources: iterate through disease terms
-                for disease_name in disease_names:
+                for i, disease_name in enumerate(disease_names):
                     logger.info(f"Searching for '{disease_name}' in {self.source_name}")
+                    
+                    # Get the disease ID for this specific disease
+                    current_disease_id = disease_ids[i] if i < len(disease_ids) else None
                     
                     # Search for documents
                     results = await self.search(disease_name, **kwargs)
@@ -552,8 +555,18 @@ class BaseScraper(ABC):
                             # Extract basic data
                             document, source_updated_at = self.extract_document_data(result)
                             
+                            # For search sources, only link to the disease being searched
+                            # Temporarily set disease_ids to just the current one
+                            original_disease_ids = self.disease_ids
+                            if self.association_method == 'search' and current_disease_id:
+                                self.disease_ids = [current_disease_id]
+                            
                             # Save to database
                             doc_id = await self.save_document(document, source_updated_at)
+                            
+                            # Restore original disease_ids
+                            self.disease_ids = original_disease_ids
+                            
                             if doc_id:
                                 total_processed += 1
                                 # Update last crawled ID

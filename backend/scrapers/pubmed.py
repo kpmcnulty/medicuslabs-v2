@@ -61,7 +61,7 @@ class PubMedScraper(BaseScraper):
         params = {
             "db": "pubmed",
             "term": search_term,
-            "retmax": min(max_results, 1000),  # PubMed max is 100000 but we'll be conservative
+            "retmax": min(max_results, 10000) if max_results else 10000,  # PubMed allows up to 100000
             "retmode": "json",
             "sort": "date"  # Most recent first
         }
@@ -74,7 +74,7 @@ class PubMedScraper(BaseScraper):
         retstart = 0
         
         # Handle pagination for large result sets
-        while len(all_pmids) < max_results:
+        while max_results is None or len(all_pmids) < max_results:
             params["retstart"] = retstart
             
             try:

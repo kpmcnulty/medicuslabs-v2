@@ -12,7 +12,7 @@ from models.schemas import (
     ScrapeRequest, ScrapeResponse, CrawlJobResponse,
     DocumentResponse, SourceResponse
 )
-from tasks.scrapers import scrape_clinicaltrials, scrape_pubmed, scrape_reddit, scrape_all_sources, scrape_incremental_all
+from tasks.scrapers import scrape_clinicaltrials, scrape_pubmed, scrape_reddit, scrape_faers, scrape_all_sources, scrape_incremental_all
 from tasks.scheduled import update_all_sources, cleanup_stuck_jobs
 
 router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
@@ -31,6 +31,8 @@ async def trigger_scrape(request: ScrapeRequest, db: AsyncSession = Depends(get_
         "pubmed": scrape_pubmed,
         "reddit": scrape_reddit,
         "reddit medical": scrape_reddit,
+        "faers": scrape_faers,
+        "fda faers": scrape_faers,
         "all": scrape_all_sources
     }
     
