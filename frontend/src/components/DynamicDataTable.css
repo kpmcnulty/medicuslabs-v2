@@ -1,8 +1,9 @@
 .dynamic-data-table {
   background: white;
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: relative;
 }
 
 .dynamic-data-table table {
@@ -13,6 +14,8 @@
 .dynamic-data-table thead {
   background: #f8f9fa;
   border-bottom: 2px solid #e0e0e0;
+  position: relative;
+  z-index: 10;
 }
 
 .dynamic-data-table th {
@@ -193,4 +196,26 @@
 .table-empty p {
   color: #999;
   font-size: 16px;
+}
+
+/* Header content layout */
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.header-label {
+  flex: 1;
+  text-align: left;
+}
+
+/* Filtered column indicator */
+th.has-filter {
+  background-color: #e8f5e9;
+}
+
+th.has-filter .header-label {
+  font-weight: 700;
 }

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { ColumnFiltersState } from '@tanstack/react-table';
 import SourceTypeSelector from './SourceTypeSelector';
 import DiseaseSelector from './DiseaseSelector';
 import DynamicDataTable from './DynamicDataTable';
@@ -26,6 +27,7 @@ const MedicalDataSearchDynamic: React.FC = () => {
   const [totalResults, setTotalResults] = useState(0);
   const [sourceBreakdown, setSourceBreakdown] = useState<Record<string, number>>({});
   const [currentPage, setCurrentPage] = useState(1);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const pageSize = 20;
 
   // Perform search
@@ -49,6 +51,10 @@ const MedicalDataSearchDynamic: React.FC = () => {
           source_categories: searchState.sourceTypes.length > 0 ? searchState.sourceTypes : undefined,
           diseases: searchState.disease ? [searchState.disease] : undefined,
           metadata: Object.keys(searchState.metadataFilters).length > 0 ? searchState.metadataFilters : undefined,
+          columnFilters: columnFilters.length > 0 ? columnFilters.map(filter => ({
+            id: filter.id,
+            value: filter.value
+          })) : undefined,
           limit: pageSize,
           offset: (currentPage - 1) * pageSize
         }),
@@ -78,7 +84,7 @@ const MedicalDataSearchDynamic: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchState, currentPage]);
+  }, [searchState, currentPage, columnFilters]);
 
   // Auto-search when filters change (but not on initial load with no filters)
   useEffect(() => {
@@ -89,7 +95,12 @@ const MedicalDataSearchDynamic: React.FC = () => {
       }, 500);
       return () => clearTimeout(debounceTimer);
     }
-  }, [searchState, performSearch]);
+  }, [searchState, performSearch, columnFilters]);
+
+  // Reset to page 1 when column filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [columnFilters]);
 
   // Handle search input
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -218,6 +229,8 @@ const MedicalDataSearchDynamic: React.FC = () => {
           loading={loading}
           onRowClick={handleRowClick}
           expandedRowContent={renderExpandedContent}
+          onColumnFiltersChange={setColumnFilters}
+          externalFilters={columnFilters}
         />
       </div>
 

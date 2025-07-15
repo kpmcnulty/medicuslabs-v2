@@ -28,6 +28,9 @@ class UnifiedSearchQuery(BaseModel):
     # Dynamic metadata filters - completely flexible
     metadata: Optional[Dict[str, Any]] = Field(None, description="Dynamic metadata filters using MongoDB-style operators")
     
+    # Column filters from table UI
+    columnFilters: Optional[List[Dict[str, Any]]] = Field(None, description="Column-specific filters from table UI")
+    
     # Search configuration
     search_type: str = Field("keyword", description="Search type: keyword, semantic, or hybrid")
     return_fields: Optional[List[str]] = Field(None, description="Specific fields to return from metadata")
@@ -259,6 +262,137 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
         if metadata_sql:
             sql += f" AND {metadata_sql}"
             params.extend(metadata_params)
+    
+    # Handle column filters from table UI
+    if search_query.columnFilters:
+        for filter_item in search_query.columnFilters:
+            if 'id' in filter_item and 'value' in filter_item:
+                column_id = filter_item['id']
+                filter_value = filter_item['value']
+                
+                # Map column IDs to actual database fields
+                column_mapping = {
+                    'title': 'd.title',
+                    'url': 'd.url',
+                    'source': 's.name',
+                    'created_at': 'd.created_at',
+                    'summary': 'd.summary'
+                }
+                
+                # Use mapped column or metadata field
+                column_ref = column_mapping.get(column_id, f"d.metadata->>'{column_id}'")
+                
+                # Convert column filter to metadata filter format
+                if isinstance(filter_value, dict) and 'conditions' in filter_value:
+                    # Advanced filter with conditions
+                    conditions = filter_value['conditions']
+                    join_op = filter_value.get('joinOperator', 'AND')
+                    
+                    column_conditions = []
+                    for condition in conditions:
+                        operator = condition.get('operator', 'contains')
+                        value = condition.get('value')
+                        
+                        if value is None or value == '':
+                            if operator in ['blank', 'notBlank']:
+                                # Handle blank/not blank
+                                if operator == 'blank':
+                                    column_conditions.append(f"({column_ref} IS NULL OR {column_ref} = '')")
+                                else:
+                                    column_conditions.append(f"({column_ref} IS NOT NULL AND {column_ref} != '')")
+                            continue
+                        
+                        # Map operators to SQL
+                        if operator == 'contains':
+                            column_conditions.append(f"{column_ref} ILIKE ${param_count}")
+                            params.append(f'%{value}%')
+                            param_count += 1
+                        elif operator == 'notContains':
+                            column_conditions.append(f"{column_ref} NOT ILIKE ${param_count}")
+                            params.append(f'%{value}%')
+                            param_count += 1
+                        elif operator == 'equals':
+                            column_conditions.append(f"{column_ref} = ${param_count}")
+                            params.append(str(value))
+                            param_count += 1
+                        elif operator == 'notEqual':
+                            column_conditions.append(f"{column_ref} != ${param_count}")
+                            params.append(str(value))
+                            param_count += 1
+                        elif operator == 'startsWith':
+                            column_conditions.append(f"{column_ref} ILIKE ${param_count}")
+                            params.append(f'{value}%')
+                            param_count += 1
+                        elif operator == 'endsWith':
+                            column_conditions.append(f"{column_ref} ILIKE ${param_count}")
+                            params.append(f'%{value}')
+                            param_count += 1
+                        elif operator == 'greaterThan':
+                            # For metadata fields, need to cast to numeric
+                            if column_id not in column_mapping:
+                                column_conditions.append(f"({column_ref})::numeric > ${param_count}::numeric")
+                            else:
+                                column_conditions.append(f"{column_ref} > ${param_count}")
+                            params.append(value)
+                            param_count += 1
+                        elif operator == 'greaterThanOrEqual':
+                            if column_id not in column_mapping:
+                                column_conditions.append(f"({column_ref})::numeric >= ${param_count}::numeric")
+                            else:
+                                column_conditions.append(f"{column_ref} >= ${param_count}")
+                            params.append(value)
+                            param_count += 1
+                        elif operator == 'lessThan':
+                            if column_id not in column_mapping:
+                                column_conditions.append(f"({column_ref})::numeric < ${param_count}::numeric")
+                            else:
+                                column_conditions.append(f"{column_ref} < ${param_count}")
+                            params.append(value)
+                            param_count += 1
+                        elif operator == 'lessThanOrEqual':
+                            if column_id not in column_mapping:
+                                column_conditions.append(f"({column_ref})::numeric <= ${param_count}::numeric")
+                            else:
+                                column_conditions.append(f"{column_ref} <= ${param_count}")
+                            params.append(value)
+                            param_count += 1
+                        elif operator == 'inRange':
+                            if isinstance(value, list) and len(value) == 2:
+                                if column_id not in column_mapping:
+                                    column_conditions.append(f"({column_ref})::numeric BETWEEN ${param_count}::numeric AND ${param_count + 1}::numeric")
+                                else:
+                                    column_conditions.append(f"{column_ref} BETWEEN ${param_count} AND ${param_count + 1}")
+                                params.extend([value[0], value[1]])
+                                param_count += 2
+                        elif operator in ['before', 'after', 'between']:
+                            # Date operators
+                            if operator == 'before':
+                                if column_id not in column_mapping:
+                                    column_conditions.append(f"({column_ref})::timestamp < ${param_count}::timestamp")
+                                else:
+                                    column_conditions.append(f"{column_ref} < ${param_count}::timestamp")
+                                params.append(value)
+                                param_count += 1
+                            elif operator == 'after':
+                                if column_id not in column_mapping:
+                                    column_conditions.append(f"({column_ref})::timestamp > ${param_count}::timestamp")
+                                else:
+                                    column_conditions.append(f"{column_ref} > ${param_count}::timestamp")
+                                params.append(value)
+                                param_count += 1
+                            elif operator == 'between' and isinstance(value, list) and len(value) == 2:
+                                if column_id not in column_mapping:
+                                    column_conditions.append(f"({column_ref})::timestamp BETWEEN ${param_count}::timestamp AND ${param_count + 1}::timestamp")
+                                else:
+                                    column_conditions.append(f"{column_ref} BETWEEN ${param_count}::timestamp AND ${param_count + 1}::timestamp")
+                                params.extend([value[0], value[1]])
+                                param_count += 2
+                    
+                    if column_conditions:
+                        if join_op == 'OR':
+                            sql += f" AND ({' OR '.join(column_conditions)})"
+                        else:
+                            sql += f" AND ({' AND '.join(column_conditions)})"
     
     sql += ")"  # Close CTE
     

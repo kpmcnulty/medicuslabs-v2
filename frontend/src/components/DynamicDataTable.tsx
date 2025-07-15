@@ -1,14 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
   getExpandedRowModel,
+  getFilteredRowModel,
   ColumnDef,
   flexRender,
-  Row,
   ExpandedState,
+  ColumnFiltersState,
 } from '@tanstack/react-table';
 import { format } from 'date-fns';
+import { ColumnFilterMenu } from './filters/ColumnFilterMenu';
 import './DynamicDataTable.css';
 
 interface DynamicDataTableProps {
@@ -17,6 +19,8 @@ interface DynamicDataTableProps {
   loading?: boolean;
   onRowClick?: (row: any) => void;
   expandedRowContent?: (row: any) => React.ReactNode;
+  onColumnFiltersChange?: (filters: ColumnFiltersState) => void;
+  externalFilters?: ColumnFiltersState;
 }
 
 const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
@@ -24,9 +28,26 @@ const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
   columns: columnConfig,
   loading = false,
   onRowClick,
-  expandedRowContent
+  expandedRowContent,
+  onColumnFiltersChange,
+  externalFilters
 }) => {
   const [expanded, setExpanded] = useState<ExpandedState>({});
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(externalFilters || []);
+
+  // Sync with external filters if provided
+  useEffect(() => {
+    if (externalFilters) {
+      setColumnFilters(externalFilters);
+    }
+  }, [externalFilters]);
+
+  // Notify parent of filter changes
+  const handleColumnFiltersChange = useCallback((updater: any) => {
+    const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater;
+    setColumnFilters(newFilters);
+    onColumnFiltersChange?.(newFilters);
+  }, [columnFilters, onColumnFiltersChange]);
 
   // Build column definitions from dynamic config
   const columns = useMemo<ColumnDef<any>[]>(() => {
@@ -58,6 +79,8 @@ const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
         accessorKey: col.key,
         header: col.label,
         size: parseInt(col.width) || 100,
+        enableColumnFilter: col.filterable !== false, // Enable filtering by default
+        filterFn: advancedFilter,
         cell: ({ getValue, row }) => {
           const value = getValue();
           
@@ -84,10 +107,13 @@ const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     state: {
       expanded,
+      columnFilters,
     },
     onExpandedChange: setExpanded,
+    onColumnFiltersChange: handleColumnFiltersChange,
   });
 
   // Render cell value based on type and render config
@@ -215,13 +241,24 @@ const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
                 <th 
                   key={header.id}
                   style={{ width: header.getSize() }}
+                  className={header.column.getIsFiltered() ? 'has-filter' : ''}
                 >
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
+                  <div className="header-content">
+                    <span className="header-label">
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                    </span>
+                    {header.column.getCanFilter() && header.column.id !== 'expander' && (
+                      <ColumnFilterMenu 
+                        column={header.column} 
+                        columnConfig={columnConfig.find((col: any) => col.key === header.column.id)}
+                      />
+                    )}
+                  </div>
                 </th>
               ))}
             </tr>
