@@ -16,6 +16,10 @@ help:
 	@echo "  make shell-db    - Open PostgreSQL shell"
 	@echo "  make dev         - Start development environment"
 
+# Load env files
+include .env
+-include .env.local
+
 # Build Docker images
 build:
 	docker-compose build

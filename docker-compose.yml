@@ -57,7 +57,7 @@ services:
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
     volumes:
       - ./backend:/app
-      - /data:/data
+      - ${DATA_PATH:-./data}:/data
     ports:
       - "8000:8000"
     depends_on:
@@ -86,7 +86,7 @@ services:
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
     volumes:
       - ./backend:/app
-      - /data:/data
+      - ${DATA_PATH:-./data}:/data
     depends_on:
       postgres:
         condition: service_healthy
