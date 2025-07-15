@@ -527,9 +527,32 @@ def generate_columns_for_results(results: List[UnifiedSearchResult]) -> List[Dic
     # Base columns always shown
     columns = [
         {"key": "title", "label": "Title", "sortable": True, "width": "300"},
-        {"key": "source", "label": "Source", "sortable": True, "width": "150"},
-        {"key": "created_at", "label": "Date", "sortable": True, "width": "120", "render": "date"}
+        {"key": "source", "label": "Source", "sortable": True, "width": "150"}
     ]
+    
+    # Determine the primary date column based on source types present
+    if results:
+        # Check what source categories we have
+        categories = set(r.source_category for r in results[:20] if r.source_category)
+        
+        # If single category, use category-specific date
+        if len(categories) == 1:
+            category = list(categories)[0]
+            if category == "publications":
+                columns.append({"key": "metadata.publication_date", "label": "Publication Date", "sortable": True, "width": "120", "render": "date"})
+            elif category == "trials":
+                columns.append({"key": "metadata.start_date", "label": "Start Date", "sortable": True, "width": "120", "render": "date"})
+            elif category == "community":
+                columns.append({"key": "metadata.created_date", "label": "Posted Date", "sortable": True, "width": "120", "render": "date"})
+            elif category == "faers":
+                columns.append({"key": "metadata.receive_date", "label": "Report Date", "sortable": True, "width": "120", "render": "date"})
+            else:
+                columns.append({"key": "created_at", "label": "Date Added", "sortable": True, "width": "120", "render": "date"})
+        else:
+            # Mixed sources - use generic date
+            columns.append({"key": "created_at", "label": "Date", "sortable": True, "width": "120", "render": "date"})
+    else:
+        columns.append({"key": "created_at", "label": "Date", "sortable": True, "width": "120", "render": "date"})
     
     if not results:
         return columns
@@ -573,22 +596,42 @@ def generate_columns_for_results(results: List[UnifiedSearchResult]) -> List[Dic
         columns.append({"key": "summary", "label": "Summary", "sortable": False, "width": "400"})
         return columns
     
-    # Add columns for most common metadata fields
-    # Sort by frequency and select top fields
+    # Define priority fields for each source type
+    source_priority_fields = {
+        "publications": ["journal", "authors", "pmid", "doi", "publication_type"],
+        "trials": ["status", "phase", "enrollment", "nct_id", "conditions"],
+        "community": ["community", "score", "reply_count", "author"],
+        "faers": ["report_type", "seriousness_criteria", "reactions", "drugs"]
+    }
+    
+    # Determine which priority fields to use
+    priority_fields = []
+    if len(categories) == 1:
+        category = list(categories)[0]
+        priority_fields = source_priority_fields.get(category, [])
+    
+    # Sort fields with priority
+    def field_sort_key(item):
+        field_name, field_info = item
+        # Priority fields come first
+        if field_name in priority_fields:
+            return (0, priority_fields.index(field_name))
+        # Then by frequency
+        return (1, -field_info["count"])
+    
     sorted_fields = sorted(
         metadata_fields.items(),
-        key=lambda x: x[1]["count"],
-        reverse=True
+        key=field_sort_key
     )
     
-    # Add up to 4 additional columns based on frequency
+    # Add up to 4 additional columns
     added_columns = 0
     for field_name, field_info in sorted_fields:
         if added_columns >= 4:
             break
         
-        # Skip fields that are too sparse
-        if field_info["count"] < len(results) * 0.5:
+        # Skip fields that are too sparse (unless they're priority fields)
+        if field_name not in priority_fields and field_info["count"] < len(results) * 0.3:
             continue
         
         # Generate column configuration

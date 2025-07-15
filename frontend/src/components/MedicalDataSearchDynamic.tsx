@@ -3,12 +3,16 @@ import { ColumnFiltersState } from '@tanstack/react-table';
 import SourceTypeSelector from './SourceTypeSelector';
 import DiseaseSelector from './DiseaseSelector';
 import DynamicDataTable from './DynamicDataTable';
+import PublicationMetadata from './metadata/PublicationMetadata';
+import ClinicalTrialMetadata from './metadata/ClinicalTrialMetadata';
+import CommunityMetadata from './metadata/CommunityMetadata';
+import FAERSMetadata from './metadata/FAERSMetadata';
 import './MedicalDataSearchDynamic.css';
 
 interface SearchState {
   query: string;
   sourceTypes: string[];
-  disease: string | null;
+  diseases: string[];
   metadataFilters: Record<string, any>;
 }
 
@@ -16,7 +20,7 @@ const MedicalDataSearchDynamic: React.FC = () => {
   const [searchState, setSearchState] = useState<SearchState>({
     query: '',
     sourceTypes: [],  // Start with no sources selected to prevent auto-search on load
-    disease: null,
+    diseases: [],
     metadataFilters: {}
   });
 
@@ -32,8 +36,8 @@ const MedicalDataSearchDynamic: React.FC = () => {
 
   // Perform search
   const performSearch = useCallback(async () => {
-    if (!searchState.query && !searchState.disease && searchState.sourceTypes.length === 0) {
-      setError('Please enter a search query, select a disease, or choose data sources');
+    if (!searchState.query && searchState.diseases.length === 0 && searchState.sourceTypes.length === 0) {
+      setError('Please enter a search query, select diseases, or choose data sources');
       return;
     }
 
@@ -49,7 +53,7 @@ const MedicalDataSearchDynamic: React.FC = () => {
         body: JSON.stringify({
           q: searchState.query || undefined,
           source_categories: searchState.sourceTypes.length > 0 ? searchState.sourceTypes : undefined,
-          diseases: searchState.disease ? [searchState.disease] : undefined,
+          diseases: searchState.diseases.length > 0 ? searchState.diseases : undefined,
           metadata: Object.keys(searchState.metadataFilters).length > 0 ? searchState.metadataFilters : undefined,
           columnFilters: columnFilters.length > 0 ? columnFilters.map(filter => ({
             id: filter.id,
@@ -89,7 +93,7 @@ const MedicalDataSearchDynamic: React.FC = () => {
   // Auto-search when filters change (but not on initial load with no filters)
   useEffect(() => {
     // Only perform search if user has entered something
-    if (searchState.query || searchState.disease || (searchState.sourceTypes.length > 0 && searchState.sourceTypes.length < 3)) {
+    if (searchState.query || searchState.diseases.length > 0 || (searchState.sourceTypes.length > 0 && searchState.sourceTypes.length < 3)) {
       const debounceTimer = setTimeout(() => {
         performSearch();
       }, 500);
@@ -115,8 +119,8 @@ const MedicalDataSearchDynamic: React.FC = () => {
   };
 
   // Handle disease selection
-  const handleDiseaseChange = (disease: string | null) => {
-    setSearchState(prev => ({ ...prev, disease }));
+  const handleDiseasesChange = (diseases: string[]) => {
+    setSearchState(prev => ({ ...prev, diseases }));
     setCurrentPage(1);
   };
 
@@ -128,26 +132,52 @@ const MedicalDataSearchDynamic: React.FC = () => {
 
   // Render expanded row content
   const renderExpandedContent = (row: any) => {
-    return (
-      <div className="expanded-row-content">
-        <h4>{row.title}</h4>
-        {row.summary && (
-          <div className="summary-section">
-            <h5>Summary</h5>
-            <p>{row.summary}</p>
+    // Determine which metadata component to use based on source category
+    const sourceCategory = row.source_category || row.metadata?.source_category;
+    
+    const commonProps = {
+      metadata: row.metadata || {},
+      title: row.title,
+      summary: row.summary,
+      url: row.url
+    };
+    
+    switch (sourceCategory) {
+      case 'publications':
+        return <PublicationMetadata {...commonProps} />;
+      
+      case 'trials':
+        return <ClinicalTrialMetadata {...commonProps} />;
+      
+      case 'community':
+        return <CommunityMetadata {...commonProps} />;
+      
+      case 'faers':
+        return <FAERSMetadata {...commonProps} />;
+      
+      default:
+        // Fallback to original display for unknown types
+        return (
+          <div className="expanded-row-content">
+            <h4>{row.title}</h4>
+            {row.summary && (
+              <div className="summary-section">
+                <h5>Summary</h5>
+                <p>{row.summary}</p>
+              </div>
+            )}
+            <div className="metadata-section">
+              <h5>Metadata</h5>
+              <pre>{JSON.stringify(row.metadata, null, 2)}</pre>
+            </div>
+            <div className="actions">
+              <a href={row.url} target="_blank" rel="noopener noreferrer" className="view-source-btn">
+                View Original Source
+              </a>
+            </div>
           </div>
-        )}
-        <div className="metadata-section">
-          <h5>Metadata</h5>
-          <pre>{JSON.stringify(row.metadata, null, 2)}</pre>
-        </div>
-        <div className="actions">
-          <a href={row.url} target="_blank" rel="noopener noreferrer" className="view-source-btn">
-            View Original Source
-          </a>
-        </div>
-      </div>
-    );
+        );
+    }
   };
 
   const totalPages = Math.ceil(totalResults / pageSize);
@@ -188,8 +218,8 @@ const MedicalDataSearchDynamic: React.FC = () => {
           </div>
           
           <DiseaseSelector
-            selectedDisease={searchState.disease}
-            onDiseaseChange={handleDiseaseChange}
+            selectedDiseases={searchState.diseases}
+            onDiseasesChange={handleDiseasesChange}
           />
         </div>
       </div>
@@ -199,7 +229,7 @@ const MedicalDataSearchDynamic: React.FC = () => {
         <div className="results-summary">
           <div className="summary-text">
             Found <strong>{totalResults}</strong> results
-            {searchState.disease && <> for <span className="highlight">{searchState.disease}</span></>}
+            {searchState.diseases.length > 0 && <> for <span className="highlight">{searchState.diseases.length === 1 ? searchState.diseases[0] : `${searchState.diseases.length} diseases`}</span></>}
             {searchState.query && <> matching "<span className="highlight">{searchState.query}</span>"</>}
           </div>
           {Object.keys(sourceBreakdown).length > 0 && (
