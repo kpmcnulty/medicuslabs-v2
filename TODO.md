@@ -205,6 +205,14 @@
 4. Expand to 100+ documents across all sources
 5. Define data normalization pipeline
 
+### 🔴 User Experience Improvements - High Priority
+- [ ] **Multi-Disease Selection** - Allow selecting multiple diseases or all diseases, with "Select All" toggle as default
+- [ ] **Separate Tables by Data Type** - Show separate tables for each data type (publications, trials, community, FAERS) with type-specific columns instead of mixed data with only shared columns
+- [ ] **Data Quality Improvements**:
+  - [ ] Show real dates (publication_date, event_date) instead of scraped_date in table columns
+  - [ ] Improve metadata display in detail view - structured format instead of raw JSON
+  - [ ] Add more meaningful table columns with actionable information
+
 
 ## Technical Architecture Notes
 
