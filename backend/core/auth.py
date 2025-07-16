@@ -46,14 +46,19 @@ async def get_current_admin(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return username
 
-def authenticate_admin(username: str, password: str) -> bool:
-    """Authenticate admin user"""
-    if username != settings.admin_username:
-        return False
-    if not settings.admin_password_hash:
-        # If no password hash is set, reject all logins for security
-        return False
-    return verify_password(password, settings.admin_password_hash)
+async def authenticate_admin(username: str, password: str) -> bool:
+    """Authenticate admin user against database"""
+    from core.database import get_pg_connection
+    
+    async with get_pg_connection() as conn:
+        result = await conn.fetchrow(
+            "SELECT password_hash FROM admin_users WHERE username = $1", 
+            username
+        )
+        if not result:
+            return False
+        
+        return verify_password(password, result['password_hash'])
 
 # Utility function to generate a password hash (for initial setup)
 if __name__ == "__main__":

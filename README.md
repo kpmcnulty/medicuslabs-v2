@@ -20,7 +20,7 @@ make up       # Start all services
 
 2. **Access the platform:**
 - **Frontend**: http://localhost:3000
-- **Admin Portal**: http://localhost:3000/admin (login: admin/admin123)
+- **Admin Portal**: http://localhost:3000/admin (see [Admin Authentication](#admin-authentication))
 - **API Documentation**: http://localhost:8000/docs
 - **API Health Check**: http://localhost:8000/health
 - **Celery Monitor (Flower)**: http://localhost:5555
@@ -31,6 +31,42 @@ make up       # Start all services
 make down     # Stop all services
 make clean    # Stop and remove all data
 ```
+
+## 🔐 Admin Authentication
+
+### Default Credentials
+- **Username**: `admin`
+- **Password**: `admin123`
+
+### Changing the Admin Password
+
+For security, you should change the default password immediately after setup:
+
+```bash
+# Run the secure password reset script
+docker exec -it medical_data_api python reset_admin_password.py
+```
+
+The script will prompt you for:
+- Username (default: admin)
+- New password (minimum 6 characters)
+- Password confirmation
+
+### Managing Admin Users
+
+```bash
+# List existing admin users
+docker exec -it medical_data_api python reset_admin_password.py list
+
+# Reset password for specific user
+docker exec -it medical_data_api python reset_admin_password.py
+```
+
+### Security Notes
+- Passwords are stored as bcrypt hashes in the database
+- No password reset endpoints are exposed via API for security
+- Password changes require server access via `docker exec`
+- JWT tokens expire after 24 hours (configurable)
 
 ## 📊 Current Status - Phase 1 Complete ✅
 
@@ -359,6 +395,20 @@ curl http://localhost:3000  # Test accessibility
 ```bash
 make logs-api       # Check API logs
 curl http://localhost:8000/health  # Test API health
+```
+
+**Admin login issues:**
+```bash
+# Reset admin password
+docker exec -it medical_data_api python reset_admin_password.py
+
+# Check admin users exist
+docker exec -it medical_data_api python reset_admin_password.py list
+
+# Test login API directly
+curl -X POST "http://localhost:8000/api/admin/login" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin&password=your-password"
 ```
 
 ### Getting Help

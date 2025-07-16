@@ -68,33 +68,38 @@ const ClinicalTrialMetadata: React.FC<ClinicalTrialMetadataProps> = ({ metadata,
           </div>
         )}
 
-        {metadata.phase && (
+        {(metadata.phase || metadata.study_phase || metadata.phases) && (
           <div className="metadata-item">
             <span className="metadata-label">Phase</span>
-            <span className="metadata-value">{metadata.phase}</span>
-          </div>
-        )}
-
-        {metadata.enrollment && (
-          <div className="metadata-item">
-            <span className="metadata-label">Enrollment</span>
             <span className="metadata-value">
-              {metadata.enrollment} participants
+              {Array.isArray(metadata.phase) 
+                ? metadata.phase.join(', ') 
+                : (metadata.phase || metadata.study_phase || (Array.isArray(metadata.phases) ? metadata.phases.join(', ') : metadata.phases))
+              }
             </span>
           </div>
         )}
 
-        {metadata.start_date && (
+        {(metadata.enrollment || metadata.enrollment_count || metadata.target_enrollment) && (
           <div className="metadata-item">
-            <span className="metadata-label">Start Date</span>
-            <span className="metadata-value">{formatDate(metadata.start_date)}</span>
+            <span className="metadata-label">Enrollment</span>
+            <span className="metadata-value">
+              {metadata.enrollment || metadata.enrollment_count || metadata.target_enrollment} participants
+            </span>
           </div>
         )}
 
-        {metadata.completion_date && (
+        {(metadata.start_date || metadata.study_start_date) && (
+          <div className="metadata-item">
+            <span className="metadata-label">Start Date</span>
+            <span className="metadata-value">{formatDate(metadata.start_date || metadata.study_start_date)}</span>
+          </div>
+        )}
+
+        {(metadata.completion_date || metadata.study_completion_date || metadata.primary_completion_date) && (
           <div className="metadata-item">
             <span className="metadata-label">Completion Date</span>
-            <span className="metadata-value">{formatDate(metadata.completion_date)}</span>
+            <span className="metadata-value">{formatDate(metadata.completion_date || metadata.study_completion_date || metadata.primary_completion_date)}</span>
           </div>
         )}
 
@@ -126,7 +131,7 @@ const ClinicalTrialMetadata: React.FC<ClinicalTrialMetadataProps> = ({ metadata,
             <div className="intervention-list">
               {metadata.interventions.slice(0, 3).map((intervention: any, index: number) => (
                 <div key={index} className="intervention-item">
-                  <strong>{intervention.intervention_type}:</strong> {intervention.intervention_name}
+                  <strong>{typeof intervention === 'string' ? 'Intervention' : (intervention.intervention_type || 'Intervention')}:</strong> {typeof intervention === 'string' ? intervention : (intervention.intervention_name || intervention.name || 'Unknown intervention')}
                 </div>
               ))}
               {metadata.interventions.length > 3 && (

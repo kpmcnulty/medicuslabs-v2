@@ -266,6 +266,7 @@ class RedditScraper(BaseScraper):
             'top_replies': [  # Generic "replies" instead of "comments"
                 {
                     'author': c['author'],
+                    'body': c['body'],
                     'score': c['score'],
                     'created_date': datetime.fromtimestamp(c['created_utc']).isoformat()
                 }

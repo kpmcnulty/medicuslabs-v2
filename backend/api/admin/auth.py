@@ -14,10 +14,11 @@ class Token(BaseModel):
 class AdminInfo(BaseModel):
     username: str
 
+
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """Admin login endpoint"""
-    if not authenticate_admin(form_data.username, form_data.password):
+    if not await authenticate_admin(form_data.username, form_data.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -28,6 +29,12 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         data={"sub": form_data.username}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=AdminInfo, dependencies=[Depends(get_current_admin)])
+async def get_current_user_info(current_admin: str = Depends(get_current_admin)):
+    """Get current admin user info"""
+    return AdminInfo(username=current_admin)
 
 @router.get("/me", response_model=AdminInfo)
 async def get_admin_info(current_admin: str = Depends(get_current_admin)):

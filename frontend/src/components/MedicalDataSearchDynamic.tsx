@@ -92,8 +92,8 @@ const MedicalDataSearchDynamic: React.FC = () => {
 
   // Auto-search when filters change (but not on initial load with no filters)
   useEffect(() => {
-    // Only perform search if user has entered something
-    if (searchState.query || searchState.diseases.length > 0 || (searchState.sourceTypes.length > 0 && searchState.sourceTypes.length < 3)) {
+    // Only perform search if user has entered something or selected filters
+    if (searchState.query || searchState.diseases.length > 0 || searchState.sourceTypes.length > 0) {
       const debounceTimer = setTimeout(() => {
         performSearch();
       }, 500);

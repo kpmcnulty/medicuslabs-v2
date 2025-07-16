@@ -149,18 +149,34 @@ class ClinicalTrialsScraper(BaseScraper):
         # Extract summary
         summary = description.get("briefSummary", "")[:500] if description.get("briefSummary") else ""
         
+        # Extract phase as string (join if multiple phases)
+        phases = status.get("phases", [])
+        phase_str = ", ".join(phases) if phases else None
+        
+        # Extract enrollment from different possible locations
+        enrollment = (
+            status.get("enrollmentInfo", {}).get("count") or
+            protocol.get("designModule", {}).get("enrollmentInfo", {}).get("count") or
+            protocol.get("designModule", {}).get("enrollment", {}).get("count")
+        )
+        
         # Build metadata
         metadata = {
             "nct_id": nct_id,
             "status": status.get("overallStatus", ""),
-            "phase": status.get("phases", []),
+            "phase": phase_str,
+            "phases": phases,  # Keep original array too
             "study_type": protocol.get("designModule", {}).get("studyType", ""),
             "conditions": conditions.get("conditions", []),
             "keywords": conditions.get("keywords", []),
-            "enrollment": status.get("enrollmentInfo", {}).get("count"),
+            "enrollment": enrollment,
+            "enrollment_count": enrollment,  # Alternative field name
+            "target_enrollment": enrollment,  # Another alternative
             "start_date": status.get("startDateStruct", {}).get("date"),
+            "study_start_date": status.get("startDateStruct", {}).get("date"),  # Alternative field name
             "start_date_type": status.get("startDateStruct", {}).get("type"),
             "completion_date": status.get("completionDateStruct", {}).get("date"),
+            "study_completion_date": status.get("completionDateStruct", {}).get("date"),  # Alternative field name
             "completion_date_type": status.get("completionDateStruct", {}).get("type"),
             "primary_completion_date": status.get("primaryCompletionDateStruct", {}).get("date"),
             "primary_completion_date_type": status.get("primaryCompletionDateStruct", {}).get("type"),

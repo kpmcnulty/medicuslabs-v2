@@ -34,13 +34,6 @@ const CommunityMetadata: React.FC<CommunityMetadataProps> = ({ metadata, title, 
     }
   };
 
-  // Helper to format engagement ratio
-  const formatEngagement = (ratio: number) => {
-    if (ratio >= 0.8) return { text: 'Very High', class: 'engagement-very-high' };
-    if (ratio >= 0.6) return { text: 'High', class: 'engagement-high' };
-    if (ratio >= 0.4) return { text: 'Medium', class: 'engagement-medium' };
-    return { text: 'Low', class: 'engagement-low' };
-  };
 
   return (
     <div className="metadata-display community-metadata">
@@ -58,12 +51,12 @@ const CommunityMetadata: React.FC<CommunityMetadataProps> = ({ metadata, title, 
           <div className="metadata-item">
             <span className="metadata-label">Community</span>
             <a 
-              href={`https://reddit.com/r/${metadata.community}`}
+              href={`https://reddit.com/r/${metadata.community.replace(/^r\//, '')}`}
               target="_blank"
               rel="noopener noreferrer"
               className="metadata-link"
             >
-              r/{metadata.community}
+              r/{metadata.community.replace(/^r\//, '')}
             </a>
           </div>
         )}
@@ -100,14 +93,6 @@ const CommunityMetadata: React.FC<CommunityMetadataProps> = ({ metadata, title, 
           </div>
         )}
 
-        {metadata.engagement_ratio !== undefined && (
-          <div className="metadata-item">
-            <span className="metadata-label">Engagement</span>
-            <span className={`engagement-badge ${formatEngagement(metadata.engagement_ratio).class}`}>
-              {formatEngagement(metadata.engagement_ratio).text}
-            </span>
-          </div>
-        )}
 
         {metadata.category && (
           <div className="metadata-item">
@@ -173,16 +158,6 @@ const CommunityMetadata: React.FC<CommunityMetadataProps> = ({ metadata, title, 
             className="action-button primary"
           >
             View on Reddit
-          </a>
-        )}
-        {metadata.post_id && (
-          <a 
-            href={`https://reddit.com${metadata.post_id}`} 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            className="action-button secondary"
-          >
-            View Thread
           </a>
         )}
       </div>

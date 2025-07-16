@@ -7,7 +7,7 @@ from core.auth import get_current_admin
 from core.database import get_pg_connection
 from loguru import logger
 from tasks.scrapers import (
-    scrape_pubmed, scrape_clinicaltrials, scrape_reddit, 
+    scrape_pubmed, scrape_clinicaltrials, scrape_reddit, scrape_faers,
     scrape_all_sources, scrape_incremental_all
 )
 
@@ -149,6 +149,7 @@ async def trigger_job(
             "PubMed": scrape_pubmed,
             "ClinicalTrials.gov": scrape_clinicaltrials,
             "Reddit": scrape_reddit,
+            "FDA FAERS": scrape_faers,
         }
         
         task = task_map.get(source['name'])

@@ -152,15 +152,15 @@ const FAERSMetadata: React.FC<FAERSMetadataProps> = ({ metadata, title, summary,
               {metadata.drugs.slice(0, 3).map((drug: any, index: number) => (
                 <div key={index} className="drug-item">
                   <div className="drug-name">
-                    {drug.drug_name || drug.medicinal_product}
-                    {drug.drug_characterization && (
+                    {typeof drug === 'string' ? drug : (drug.drug_name || drug.medicinal_product || 'Unknown drug')}
+                    {typeof drug === 'object' && drug.drug_characterization && (
                       <span className="drug-type"> ({drug.drug_characterization})</span>
                     )}
                   </div>
-                  {drug.drug_indication && (
+                  {typeof drug === 'object' && drug.drug_indication && (
                     <div className="drug-indication">Indication: {drug.drug_indication}</div>
                   )}
-                  {drug.drug_dosage && (
+                  {typeof drug === 'object' && drug.drug_dosage && (
                     <div className="drug-dosage">
                       Dose: {drug.drug_dosage.dose_amount} {drug.drug_dosage.dose_unit}
                       {drug.drug_dosage.dose_frequency && ` - ${drug.drug_dosage.dose_frequency}`}
