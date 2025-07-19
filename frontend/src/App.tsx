@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import MedicalDataSearchDynamic from './components/MedicalDataSearchDynamic';
+import DiseaseDataByType from './components/DiseaseDataByType';
 import AdminLayout from './components/admin/AdminLayout';
 import Login from './components/admin/Login';
 import ProtectedRoute from './components/admin/ProtectedRoute';
@@ -17,7 +17,7 @@ function App() {
       <div className="App">
         <Routes>
           {/* Public routes */}
-          <Route path="/" element={<MedicalDataSearchDynamic />} />
+          <Route path="/" element={<DiseaseDataByType />} />
           
           {/* Admin routes */}
           <Route path="/admin/login" element={<Login />} />

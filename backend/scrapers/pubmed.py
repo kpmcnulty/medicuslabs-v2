@@ -301,7 +301,13 @@ class PubMedScraper(BaseScraper):
             return None
     
     def _extract_publication_dates(self, journal, pubmed_data) -> Dict[str, Any]:
-        """Extract all publication dates"""
+        """Extract all publication dates
+        
+        Note: Medical journals often have print issue dates in the future (e.g., April 2026)
+        while the article is published electronically much earlier (e.g., March 2025).
+        We capture both dates but prefer the electronic publication date to avoid
+        showing future dates in search results.
+        """
         dates = {}
         
         # Journal publication date
@@ -333,8 +339,9 @@ class PubMedScraper(BaseScraper):
         
         # Electronic publication date
         if pubmed_data is not None:
+            # First check for ArticleDate elements (epub dates)
             for date_elem in pubmed_data.findall(".//ArticleDate"):
-                date_type = date_elem.get("DateType", "")
+                date_type = date_elem.get("DateType", "Electronic")
                 year_elem = date_elem.find(".//Year")
                 month_elem = date_elem.find(".//Month")
                 day_elem = date_elem.find(".//Day")
@@ -344,6 +351,20 @@ class PubMedScraper(BaseScraper):
                     month = month_elem.text.zfill(2) if month_elem is not None else "01"
                     day = day_elem.text.zfill(2) if day_elem is not None else "01"
                     dates[f"electronic_{date_type}"] = f"{year}-{month}-{day}"
+            
+            # Also check PubMedPubDate for epublish status
+            history_elem = pubmed_data.find(".//History")
+            if history_elem is not None:
+                for pub_date in history_elem.findall(".//PubMedPubDate[@PubStatus='epublish']"):
+                    year_elem = pub_date.find(".//Year")
+                    month_elem = pub_date.find(".//Month")
+                    day_elem = pub_date.find(".//Day")
+                    
+                    if year_elem is not None:
+                        year = year_elem.text
+                        month = month_elem.text.zfill(2) if month_elem is not None else "01"
+                        day = day_elem.text.zfill(2) if day_elem is not None else "01"
+                        dates["electronic_epublish"] = f"{year}-{month}-{day}"
         
         return dates
     
@@ -511,7 +532,40 @@ class PubMedScraper(BaseScraper):
         
         # Build ENHANCED metadata
         pub_dates = raw_data.get("publication_dates", {})
-        pub_date = pub_dates.get("published", "")
+        
+        # Prefer electronic publication date over print date to avoid future dates
+        pub_date = ""
+        # Check for electronic publication dates first
+        for key in pub_dates:
+            if key.startswith("electronic_") and pub_dates[key]:
+                pub_date = pub_dates[key]
+                break
+        
+        # Fall back to print publication date if no electronic date
+        if not pub_date:
+            pub_date = pub_dates.get("published", "")
+        
+        # Validate that the date is not in the future
+        if pub_date:
+            try:
+                pub_datetime = datetime.strptime(pub_date, "%Y-%m-%d")
+                if pub_datetime > datetime.now():
+                    logger.warning(f"Future publication date detected for PMID {pmid}: {pub_date}")
+                    # Store the future date in metadata but look for a more reasonable date
+                    # Check publication history for actual publication date
+                    pub_history = raw_data.get("publication_history", [])
+                    for hist in pub_history:
+                        if hist.get("status") in ["pubmed", "entrez", "medline"]:
+                            hist_date = f"{hist.get('year', '')}-{hist.get('month', '01').zfill(2)}-{hist.get('day', '01').zfill(2)}"
+                            try:
+                                hist_datetime = datetime.strptime(hist_date, "%Y-%m-%d")
+                                if hist_datetime <= datetime.now():
+                                    pub_date = hist_date
+                                    break
+                            except:
+                                pass
+            except Exception as e:
+                logger.warning(f"Error parsing publication date for PMID {pmid}: {e}")
         
         metadata = {
             # Basic info
@@ -520,6 +574,7 @@ class PubMedScraper(BaseScraper):
             "issn": raw_data.get("issn", ""),
             "language": raw_data.get("language", "en"),
             "publication_date": pub_date,
+            "publication_dates": pub_dates,  # Store all dates for reference
             
             # Identifiers
             "identifiers": raw_data.get("identifiers", {}),

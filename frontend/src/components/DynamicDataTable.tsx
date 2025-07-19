@@ -1,15 +1,18 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
-  getExpandedRowModel,
-  ColumnDef,
   flexRender,
-  ExpandedState,
+  ColumnDef,
+  VisibilityState,
+  PaginationState,
+  SortingState,
   ColumnFiltersState,
+  ColumnPinningState,
+  RowSelectionState,
+  ColumnOrderState,
 } from '@tanstack/react-table';
-import { format } from 'date-fns';
-import { ColumnFilterMenu } from './filters/ColumnFilterMenu';
+import { renderCellValue } from '../utils/cellRenderers';
 import './DynamicDataTable.css';
 
 interface DynamicDataTableProps {
@@ -17,199 +20,149 @@ interface DynamicDataTableProps {
   columns: any[];
   loading?: boolean;
   onRowClick?: (row: any) => void;
-  expandedRowContent?: (row: any) => React.ReactNode;
+  expandedRowContent?: ((row: any) => React.ReactNode) | null;
+  // Server-side state management
+  totalCount?: number;
+  pagination?: PaginationState;
+  onPaginationChange?: (pagination: PaginationState) => void;
+  sorting?: SortingState;
+  onSortingChange?: (sorting: SortingState) => void;
+  columnFilters?: ColumnFiltersState;
   onColumnFiltersChange?: (filters: ColumnFiltersState) => void;
-  externalFilters?: ColumnFiltersState;
 }
 
-const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
+const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
   data,
   columns: columnConfig,
   loading = false,
   onRowClick,
   expandedRowContent,
+  totalCount,
+  pagination,
+  onPaginationChange,
+  sorting,
+  onSortingChange,
+  columnFilters,
   onColumnFiltersChange,
-  externalFilters
-}) => {
-  const [expanded, setExpanded] = useState<ExpandedState>({});
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(externalFilters || []);
+}, ref) => {
+  // Local UI state only
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({ left: [], right: [] });
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
+  const [showColumnSettings, setShowColumnSettings] = useState(false);
 
-  // Sync with external filters if provided
+  // Set default visibility only (let users control pinning)
   useEffect(() => {
-    if (externalFilters) {
-      setColumnFilters(externalFilters);
-    }
-  }, [externalFilters]);
-
-  // Notify parent of filter changes
-  const handleColumnFiltersChange = useCallback((updater: any) => {
-    const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater;
-    setColumnFilters(newFilters);
-    onColumnFiltersChange?.(newFilters);
-  }, [columnFilters, onColumnFiltersChange]);
+    const defaultVisibility: VisibilityState = {
+      select: true, // Always show selection column
+    };
+    let metadataCount = 0;
+    
+    columnConfig.forEach((col: any) => {
+      // Always show base columns
+      if (!col.key.startsWith('metadata.')) {
+        defaultVisibility[col.key] = true;
+      } else {
+        // Show first 8 metadata columns, hide the rest
+        defaultVisibility[col.key] = metadataCount < 8;
+        metadataCount++;
+      }
+    });
+    
+    setColumnVisibility(defaultVisibility);
+    // Only pin select column by default, let users control other columns
+    setColumnPinning({ left: ['select'], right: [] });
+    // Set initial column order
+    setColumnOrder(['select', ...columnConfig.map((col: any) => col.key)]);
+  }, [columnConfig]);
 
   // Build column definitions from dynamic config
   const columns = useMemo<ColumnDef<any>[]>(() => {
-    const cols: ColumnDef<any>[] = [];
-
-    // Add expander column if needed
-    if (expandedRowContent) {
-      cols.push({
-        id: 'expander',
-        header: '',
-        cell: ({ row }) => (
-          <button
-            className="row-expander"
-            onClick={(e) => {
-              e.stopPropagation();
-              row.toggleExpanded();
-            }}
-          >
-            {row.getIsExpanded() ? '▼' : '▶'}
-          </button>
-        ),
-        size: 40,
-      });
-    }
-
-    // Add dynamic columns
-    columnConfig.forEach((col: any) => {
-      cols.push({
-        accessorKey: col.key,
-        header: col.label,
-        size: parseInt(col.width) || 100,
-        enableColumnFilter: col.filterable !== false, // Enable filtering by default
-        cell: ({ getValue, row }) => {
-          const value = getValue();
-          
-          // Handle nested keys
-          if (col.key.includes('.')) {
-            const keys = col.key.split('.');
-            let nestedValue = row.original;
-            for (const key of keys) {
-              nestedValue = nestedValue?.[key];
-            }
-            return renderCellValue(nestedValue, col);
-          }
-          
-          return renderCellValue(value, col);
-        }
-      });
-    });
-
-    return cols;
-  }, [columnConfig, expandedRowContent]);
+    // Add select column first
+    const selectColumn: ColumnDef<any> = {
+      id: 'select',
+      header: ({ table }: any) => (
+        <input
+          type="checkbox"
+          checked={table.getIsAllPageRowsSelected()}
+          onChange={table.getToggleAllPageRowsSelectedHandler()}
+        />
+      ),
+      cell: ({ row }: any) => (
+        <input
+          type="checkbox"
+          checked={row.getIsSelected()}
+          onChange={row.getToggleSelectedHandler()}
+          disabled={!row.getCanSelect()}
+        />
+      ),
+      size: 40,
+      enableSorting: false,
+      enableColumnFilter: false,
+    };
+    
+    const dataColumns = columnConfig.map((col: any) => ({
+      id: col.key,
+      accessorKey: col.key,
+      header: col.label,
+      size: parseInt(col.width) || 150,
+      enableSorting: col.sortable !== false,
+      // Enable column filtering for server-side
+      enableColumnFilter: true,
+      cell: ({ getValue }: any) => renderCellValue(getValue(), col),
+    }));
+    
+    return [selectColumn, ...dataColumns];
+  }, [columnConfig]);
 
   const table = useReactTable({
     data,
     columns,
-    getCoreRowModel: getCoreRowModel(),
-    getExpandedRowModel: getExpandedRowModel(),
+    pageCount: totalCount ? Math.ceil(totalCount / (pagination?.pageSize || 20)) : undefined,
     state: {
-      expanded,
-      columnFilters,
+      columnVisibility,
+      columnPinning,
+      rowSelection,
+      columnOrder,
+      pagination: pagination || { pageIndex: 0, pageSize: 20 },
+      sorting: sorting || [],
+      columnFilters: columnFilters || [],
     },
-    onExpandedChange: setExpanded,
-    onColumnFiltersChange: handleColumnFiltersChange,
+    onColumnVisibilityChange: setColumnVisibility,
+    onColumnPinningChange: setColumnPinning,
+    onRowSelectionChange: setRowSelection,
+    onColumnOrderChange: setColumnOrder,
+    enableRowSelection: true,
+    enableMultiRowSelection: true,
+    onPaginationChange: (updater) => {
+      if (onPaginationChange && pagination) {
+        const newPagination = typeof updater === 'function' ? updater(pagination) : updater;
+        onPaginationChange(newPagination);
+      }
+    },
+    onSortingChange: (updater) => {
+      if (onSortingChange) {
+        const newSorting = typeof updater === 'function' ? updater(sorting || []) : updater;
+        onSortingChange(newSorting);
+      }
+    },
+    onColumnFiltersChange: (updater) => {
+      if (onColumnFiltersChange) {
+        const newFilters = typeof updater === 'function' ? updater(columnFilters || []) : updater;
+        onColumnFiltersChange(newFilters);
+      }
+    },
+    getCoreRowModel: getCoreRowModel(),
+    manualPagination: true,
+    manualSorting: true,
+    manualFiltering: true, // Server-side filtering
   });
 
-  // Render cell value based on type and render config
-  const renderCellValue = (value: any, col: any) => {
-    if (value === null || value === undefined) {
-      return <span className="null-value">—</span>;
-    }
-
-    // Handle different render types
-    switch (col.render) {
-      case 'first_three':
-        if (Array.isArray(value)) {
-          const authors = value.slice(0, 3).map((a: any) => 
-            typeof a === 'object' ? a.name : a
-          ).filter(Boolean);
-          const remaining = value.length - 3;
-          return (
-            <span className="array-value">
-              {authors.join(', ')}
-              {remaining > 0 && <span className="more-count"> +{remaining} more</span>}
-            </span>
-          );
-        }
-        break;
-
-      case 'tags':
-        if (Array.isArray(value)) {
-          return (
-            <div className="tags-container">
-              {value.slice(0, 3).map((tag, idx) => (
-                <span key={idx} className="tag">{tag}</span>
-              ))}
-              {value.length > 3 && <span className="more-count">+{value.length - 3}</span>}
-            </div>
-          );
-        }
-        break;
-
-      case 'status_badge':
-        return (
-          <span className={`status-badge status-${(value || '').toLowerCase().replace(/\s+/g, '-')}`}>
-            {value}
-          </span>
-        );
-
-      case 'badge':
-        return <span className="badge">{value}</span>;
-
-      case 'engagement_stats':
-        if (typeof value === 'object') {
-          return (
-            <div className="engagement-stats">
-              {value.upvotes && <span>👍 {value.upvotes}</span>}
-              {value.comments && <span>💬 {value.comments}</span>}
-            </div>
-          );
-        }
-        break;
-    }
-
-    // Handle data types
-    switch (col.type) {
-      case 'date':
-        if (value) {
-          try {
-            return format(new Date(value), 'MMM d, yyyy');
-          } catch {
-            return value;
-          }
-        }
-        break;
-
-      case 'array':
-        if (Array.isArray(value)) {
-          return <span className="array-value">{value.join(', ')}</span>;
-        }
-        break;
-
-      case 'object':
-        if (typeof value === 'object') {
-          return <span className="object-value">{JSON.stringify(value)}</span>;
-        }
-        break;
-
-      default:
-        // String/number - truncate if too long
-        const strValue = String(value);
-        if (strValue.length > 100) {
-          return (
-            <span className="truncated" title={strValue}>
-              {strValue.substring(0, 100)}...
-            </span>
-          );
-        }
-        return strValue;
-    }
-
-    return String(value);
-  };
+  // Expose table instance to parent via ref
+  useImperativeHandle(ref, () => ({
+    table,
+  }));
 
   if (loading) {
     return (
@@ -220,7 +173,7 @@ const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
     );
   }
 
-  if (data.length === 0) {
+  if (data.length === 0 && !loading) {
     return (
       <div className="table-empty">
         <p>No results found</p>
@@ -230,65 +183,315 @@ const DynamicDataTable: React.FC<DynamicDataTableProps> = ({
 
   return (
     <div className="dynamic-data-table">
-      <table>
-        <thead>
-          {table.getHeaderGroups().map(headerGroup => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map(header => (
-                <th 
-                  key={header.id}
-                  style={{ width: header.getSize() }}
-                  className={header.column.getIsFiltered() ? 'has-filter' : ''}
-                >
+      <div className="table-toolbar">
+        <div className="toolbar-left">
+          {Object.keys(rowSelection).length > 0 && (
+            <div className="selection-info">
+              {Object.keys(rowSelection).length} row{Object.keys(rowSelection).length > 1 ? 's' : ''} selected
+              <button
+                className="clear-selection-btn"
+                onClick={() => setRowSelection({})}
+              >
+                Clear
+              </button>
+              <button
+                className="export-btn"
+                onClick={() => {
+                  // Get selected rows using TanStack's API
+                  const selectedRows = table.getFilteredSelectedRowModel().rows;
+                  const dataToExport = selectedRows.map(row => row.original);
+                  
+                  // Simple CSV export
+                  const visibleColumns = table.getAllLeafColumns()
+                    .filter(col => col.getIsVisible() && col.id !== 'select');
+                  
+                  const headers = visibleColumns
+                    .map(col => String(col.columnDef.header || col.id));
+                  
+                  const csv = [
+                    headers.join(','),
+                    ...dataToExport.map(row => 
+                      visibleColumns
+                        .map(col => {
+                          const keys = col.id.split('.');
+                          let value: any = row;
+                          for (const key of keys) {
+                            value = value?.[key];
+                          }
+                          value = value ?? '';
+                          return typeof value === 'string' && value.includes(',') 
+                            ? `"${value}"` 
+                            : value;
+                        })
+                        .join(',')
+                    )
+                  ].join('\n');
+                  
+                  // Download CSV
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `export-${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                Export Selected
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="toolbar-right">
+          {columnFilters && columnFilters.length > 0 && (
+            <div className="active-filters-info">
+              <span className="filter-badge">{columnFilters.length} filter{columnFilters.length > 1 ? 's' : ''} active</span>
+              <button
+                className="clear-filters-btn"
+                onClick={() => onColumnFiltersChange?.([])}
+              >
+                Clear All
+              </button>
+            </div>
+          )}
+          <button
+            className="column-settings-btn"
+            onClick={() => setShowColumnSettings(!showColumnSettings)}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            Columns
+          </button>
+        </div>
+        
+        {showColumnSettings && (
+          <div className="column-settings-dropdown">
+            <div className="column-settings-header">
+              <h3>Table Settings</h3>
+              <button
+                className="reset-btn"
+                onClick={() => {
+                  table.resetColumnVisibility();
+                  table.resetColumnPinning();
+                  table.resetColumnOrder();
+                }}
+              >
+                Reset
+              </button>
+            </div>
+            
+            <div className="column-settings-content">
+              <h4>Column Settings</h4>
+              <div className="column-settings-list">
+                {table.getAllLeafColumns().map(column => {
+                  const config = columnConfig.find((col: any) => col.key === column.id);
+                  const isPinned = column.getIsPinned();
+                  
+                  return (
+                    <div key={column.id} className="column-settings-item">
+                      <label className="column-toggle">
+                        <input
+                          type="checkbox"
+                          checked={column.getIsVisible()}
+                          onChange={column.getToggleVisibilityHandler()}
+                        />
+                        {config?.label || column.id}
+                      </label>
+                      
+                      {column.id !== 'select' && (
+                        <div className="column-pin-controls">
+                          <button
+                            className={`pin-btn ${isPinned === 'left' ? 'active' : ''}`}
+                            onClick={() => {
+                              if (isPinned === 'left') {
+                                column.pin(false);
+                              } else {
+                                column.pin('left');
+                              }
+                            }}
+                            title="Pin to left"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <path d="M2 2v12h2V2H2zm4 0v12h2V8l4 4V4l-4 4V2H6z"/>
+                            </svg>
+                          </button>
+                          <button
+                            className={`pin-btn ${isPinned === 'right' ? 'active' : ''}`}
+                            onClick={() => {
+                              if (isPinned === 'right') {
+                                column.pin(false);
+                              } else {
+                                column.pin('right');
+                              }
+                            }}
+                            title="Pin to right"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <path d="M14 2v12h-2V2h2zm-4 0v12H8V8L4 4v8l4-4v6H8z"/>
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            {table.getHeaderGroups().map(headerGroup => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map(header => {
+                  const isPinned = header.column.getIsPinned();
+                  const isLastLeftPinned = isPinned === 'left' && header.column.getIsLastColumn('left');
+                  const isFirstRightPinned = isPinned === 'right' && header.column.getIsFirstColumn('right');
+                  
+                  return (
+                    <th 
+                      key={header.id}
+                      style={{ 
+                        width: header.getSize(),
+                        position: isPinned ? 'sticky' : 'relative',
+                        left: isPinned === 'left' ? header.column.getStart('left') : undefined,
+                        right: isPinned === 'right' ? header.column.getAfter('right') : undefined,
+                        zIndex: isPinned ? 1 : 0,
+                        background: isPinned ? '#f8f9fa' : undefined,
+                        boxShadow: isLastLeftPinned ? '2px 0 5px -2px rgba(0,0,0,0.1)' : 
+                                   isFirstRightPinned ? '-2px 0 5px -2px rgba(0,0,0,0.1)' : undefined,
+                      }}
+                      className={`
+                        ${header.column.getCanSort() ? 'sortable' : ''}
+                        ${header.column.getFilterValue() ? 'has-filter' : ''}
+                      `}
+                    >
                   <div className="header-content">
-                    <span className="header-label">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                    <span 
+                      className="header-label"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
+                      {header.column.getIsSorted() && (
+                        <span className="sort-indicator">
+                          {header.column.getIsSorted() === 'asc' ? ' ↑' : ' ↓'}
+                        </span>
+                      )}
                     </span>
-                    {header.column.getCanFilter() && header.column.id !== 'expander' && (
-                      <ColumnFilterMenu 
-                        column={header.column} 
-                        columnConfig={columnConfig.find((col: any) => col.key === header.column.id)}
+                    {header.column.getCanFilter() && header.column.id !== 'select' && (
+                      <input
+                        type="text"
+                        value={(header.column.getFilterValue() ?? '') as string}
+                        onChange={e => header.column.setFilterValue(e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Filter..."
+                        className="column-filter-input"
                       />
                     )}
                   </div>
+                  {header.column.getCanResize() && (
+                    <div
+                      className="resizer"
+                      onMouseDown={header.getResizeHandler()}
+                      onTouchStart={header.getResizeHandler()}
+                    />
+                  )}
                 </th>
-              ))}
+                  );
+                })}
             </tr>
           ))}
         </thead>
         <tbody>
           {table.getRowModel().rows.map(row => (
-            <React.Fragment key={row.id}>
-              <tr 
-                onClick={() => onRowClick && onRowClick(row.original)}
-                className={onRowClick ? 'clickable' : ''}
-              >
-                {row.getVisibleCells().map(cell => (
-                  <td key={cell.id}>
+            <tr 
+              key={row.id}
+              className="data-row"
+              onClick={() => onRowClick?.(row.original)}
+            >
+              {row.getVisibleCells().map(cell => {
+                const isPinned = cell.column.getIsPinned();
+                const isLastLeftPinned = isPinned === 'left' && cell.column.getIsLastColumn('left');
+                const isFirstRightPinned = isPinned === 'right' && cell.column.getIsFirstColumn('right');
+                
+                return (
+                  <td 
+                    key={cell.id} 
+                    style={{ 
+                      width: cell.column.getSize(),
+                      position: isPinned ? 'sticky' : 'relative',
+                      left: isPinned === 'left' ? cell.column.getStart('left') : undefined,
+                      right: isPinned === 'right' ? cell.column.getAfter('right') : undefined,
+                      zIndex: isPinned ? 1 : 0,
+                      background: isPinned ? 'white' : undefined,
+                      boxShadow: isLastLeftPinned ? '2px 0 5px -2px rgba(0,0,0,0.1)' : 
+                                 isFirstRightPinned ? '-2px 0 5px -2px rgba(0,0,0,0.1)' : undefined,
+                    }}
+                  >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
-                ))}
-              </tr>
-              {row.getIsExpanded() && expandedRowContent && (
-                <tr>
-                  <td colSpan={columns.length}>
-                    <div className="expanded-content">
-                      {expandedRowContent(row.original)}
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </React.Fragment>
+                );
+              })}
+            </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
+
+      {/* TanStack Pagination */}
+      {totalCount && totalCount > (pagination?.pageSize || 20) && (
+        <div className="table-pagination">
+          <button
+            onClick={() => table.setPageIndex(0)}
+            disabled={!table.getCanPreviousPage()}
+          >
+            {'<<'}
+          </button>
+          <button
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            {'<'}
+          </button>
+          <span className="pagination-info">
+            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+          </span>
+          <button
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            {'>'}
+          </button>
+          <button
+            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+            disabled={!table.getCanNextPage()}
+          >
+            {'>>'}
+          </button>
+          <select
+            value={table.getState().pagination.pageSize}
+            onChange={e => {
+              table.setPageSize(Number(e.target.value));
+            }}
+          >
+            {[10, 20, 30, 40, 50].map(pageSize => (
+              <option key={pageSize} value={pageSize}>
+                Show {pageSize}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
-};
+});
+
+DynamicDataTable.displayName = 'DynamicDataTable';
 
 export default DynamicDataTable;

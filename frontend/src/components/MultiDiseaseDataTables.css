@@ -1,0 +1,210 @@
+.multi-disease-data-tables {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.multi-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.multi-table-header h2 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.8rem;
+  font-weight: 600;
+}
+
+.multi-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.global-selection-info {
+  font-size: 0.9rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.export-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.export-all-btn:hover:not(:disabled) {
+  background: #0056b3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+}
+
+.export-all-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.disease-tables-container {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.disease-table-section {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.disease-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-bottom: 1px solid #dee2e6;
+}
+
+.disease-table-header h3 {
+  margin: 0;
+  color: #495057;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.disease-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.table-count {
+  font-size: 0.85rem;
+  color: #6c757d;
+  font-weight: 500;
+  background: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid #dee2e6;
+}
+
+.export-csv-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.export-csv-btn:hover:not(:disabled) {
+  background: #1e7e34;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(40, 167, 69, 0.3);
+}
+
+.export-csv-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Ensure the table takes full width within its container */
+.disease-table-section .dynamic-data-table {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Add some spacing between multiple tables */
+.disease-table-section:not(:last-child) {
+  margin-bottom: 20px;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .multi-table-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .multi-table-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .disease-table-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .disease-table-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .export-all-btn,
+  .export-csv-btn {
+    font-size: 0.8rem;
+    padding: 8px 12px;
+  }
+}
+
+/* Loading and empty states */
+.disease-table-section .table-loading,
+.disease-table-section .table-empty {
+  margin: 20px;
+  text-align: center;
+  color: #6c757d;
+}
+
+/* Enhance visual separation between tables */
+.disease-table-section {
+  border: 1px solid #dee2e6;
+}
+
+.disease-table-section:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: box-shadow 0.3s ease;
+}
+
+/* Loading spinner for export buttons */
+.loading-spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+  margin-right: 4px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

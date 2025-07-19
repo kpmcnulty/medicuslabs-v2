@@ -74,6 +74,7 @@ class UnifiedSearchResult(BaseModel):
     summary: Optional[str] = None
     content_snippet: Optional[str] = None
     diseases: List[str] = []
+    last_updated: Optional[datetime] = None  # Unified date field
     
     # All metadata as flexible JSON
     metadata: Dict[str, Any] = {}
@@ -406,10 +407,54 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
         sql += " ORDER BY rank DESC, created_at DESC"
     elif search_query.sort_by == "date":
         sql += f" ORDER BY created_at {search_query.sort_order.upper()}"
+    elif search_query.sort_by == "source":
+        sql += f" ORDER BY source_name {search_query.sort_order.upper()}"
+    elif search_query.sort_by == "source_category":
+        sql += f" ORDER BY source_category {search_query.sort_order.upper()}"
+    elif search_query.sort_by == "title":
+        sql += f" ORDER BY title {search_query.sort_order.upper()}"
+    elif search_query.sort_by == "last_updated":
+        # Sort by the most relevant date field based on source type
+        sql += f""" ORDER BY 
+            CASE 
+                WHEN source_category = 'publications' THEN 
+                    COALESCE(
+                        CASE WHEN doc_metadata->>'publication_date' != '' AND doc_metadata->>'publication_date' IS NOT NULL 
+                            THEN (doc_metadata->>'publication_date')::timestamp END,
+                        CASE WHEN doc_metadata->>'created_date' != '' AND doc_metadata->>'created_date' IS NOT NULL 
+                            THEN (doc_metadata->>'created_date')::timestamp END,
+                        created_at
+                    )
+                WHEN source_category = 'trials' THEN 
+                    COALESCE(
+                        CASE WHEN doc_metadata->>'last_update' != '' AND doc_metadata->>'last_update' IS NOT NULL 
+                            THEN (doc_metadata->>'last_update')::timestamp END,
+                        CASE WHEN doc_metadata->>'start_date' != '' AND doc_metadata->>'start_date' IS NOT NULL 
+                            THEN (doc_metadata->>'start_date')::timestamp END,
+                        CASE WHEN doc_metadata->>'study_start_date' != '' AND doc_metadata->>'study_start_date' IS NOT NULL 
+                            THEN (doc_metadata->>'study_start_date')::timestamp END,
+                        created_at
+                    )
+                WHEN source_category = 'community' THEN 
+                    COALESCE(
+                        CASE WHEN doc_metadata->>'created_date' != '' AND doc_metadata->>'created_date' IS NOT NULL 
+                            THEN (doc_metadata->>'created_date')::timestamp END,
+                        created_at
+                    )
+                WHEN source_category = 'faers' THEN 
+                    COALESCE(
+                        CASE WHEN doc_metadata->>'receive_date' != '' AND doc_metadata->>'receive_date' IS NOT NULL 
+                            THEN (doc_metadata->>'receive_date')::timestamp END,
+                        CASE WHEN doc_metadata->>'receipt_date' != '' AND doc_metadata->>'receipt_date' IS NOT NULL 
+                            THEN (doc_metadata->>'receipt_date')::timestamp END,
+                        created_at
+                    )
+                ELSE created_at
+            END {search_query.sort_order.upper()}"""
     elif search_query.sort_by and "." in search_query.sort_by:
         # Sort by metadata field
         json_path = "->".join([f"'{part}'" for part in search_query.sort_by.split(".")])
-        sql += f" ORDER BY metadata->{json_path} {search_query.sort_order.upper()}"
+        sql += f" ORDER BY doc_metadata->{json_path} {search_query.sort_order.upper()}"
     else:
         sql += " ORDER BY created_at DESC"
     
@@ -521,146 +566,123 @@ async def generate_facets(
     return facets
 
 
-def generate_columns_for_results(results: List[UnifiedSearchResult]) -> List[Dict[str, Any]]:
-    """Generate dynamic column configuration based on search results"""
+def generate_columns_for_results(results: List[UnifiedSearchResult], requested_categories: List[str] = None) -> List[Dict[str, Any]]:
+    """Generate dynamic column configuration from actual result data"""
     
     # Base columns always shown
     columns = [
-        {"key": "title", "label": "Title", "sortable": True, "width": "300"},
-        {"key": "source", "label": "Source", "sortable": True, "width": "150"}
+        {"key": "title", "label": "Title", "sortable": True, "width": "300", "frozen": True},
+        {"key": "source", "label": "Source", "sortable": True, "width": "150", "frozen": True},
+        {"key": "source_category", "label": "Type", "sortable": True, "width": "100", "render": "badge"},
+        {"key": "last_updated", "label": "Last Updated", "sortable": True, "width": "120", "render": "date"}
     ]
     
-    # Determine the primary date column based on source types present
-    if results:
-        # Check what source categories we have
-        categories = set(r.source_category for r in results[:20] if r.source_category)
-        
-        # If single category, use category-specific date
-        if len(categories) == 1:
-            category = list(categories)[0]
-            if category == "publications":
-                columns.append({"key": "metadata.publication_date", "label": "Publication Date", "sortable": True, "width": "120", "render": "date"})
-            elif category == "trials":
-                columns.append({"key": "metadata.start_date", "label": "Start Date", "sortable": True, "width": "120", "render": "date"})
-            elif category == "community":
-                columns.append({"key": "metadata.created_date", "label": "Posted Date", "sortable": True, "width": "120", "render": "date"})
-            elif category == "faers":
-                columns.append({"key": "metadata.receive_date", "label": "Report Date", "sortable": True, "width": "120", "render": "date"})
-            else:
-                columns.append({"key": "created_at", "label": "Date Added", "sortable": True, "width": "120", "render": "date"})
-        else:
-            # Mixed sources - use generic date
-            columns.append({"key": "created_at", "label": "Date", "sortable": True, "width": "120", "render": "date"})
-    else:
-        columns.append({"key": "created_at", "label": "Date", "sortable": True, "width": "120", "render": "date"})
-    
+    # If no results, just return base columns
     if not results:
         return columns
     
     # Analyze metadata fields from actual results
-    metadata_fields = {}
-    categories = set()
+    metadata_analysis = {}
     
-    # Sample up to 20 results to determine common fields
-    for result in results[:20]:
-        if result.source_category:
-            categories.add(result.source_category)
-        
-        # Collect metadata fields and their types
-        for field, value in result.metadata.items():
-            if field not in metadata_fields:
-                metadata_fields[field] = {
+    # Sample first 50 results or all if less
+    sample_size = min(50, len(results))
+    for result in results[:sample_size]:
+        for field_name, value in result.metadata.items():
+            if field_name not in metadata_analysis:
+                metadata_analysis[field_name] = {
                     "count": 0,
-                    "type": None,
-                    "sample_values": []
+                    "types": set(),
+                    "non_null_count": 0,
+                    "sample_values": [],
+                    "max_length": 0,
+                    "sources": set()
                 }
             
-            metadata_fields[field]["count"] += 1
+            field_info = metadata_analysis[field_name]
+            field_info["count"] += 1
+            field_info["sources"].add(result.source_category)
             
-            # Determine field type from value
-            if isinstance(value, list):
-                metadata_fields[field]["type"] = "list"
-            elif isinstance(value, (int, float)):
-                metadata_fields[field]["type"] = "number"
-            elif isinstance(value, bool):
-                metadata_fields[field]["type"] = "boolean"
-            else:
-                metadata_fields[field]["type"] = "string"
-            
-            # Collect sample values
-            if len(metadata_fields[field]["sample_values"]) < 3 and value:
-                metadata_fields[field]["sample_values"].append(value)
+            if value is not None:
+                field_info["non_null_count"] += 1
+                
+                # Detect type
+                if isinstance(value, list):
+                    field_info["types"].add("list")
+                    if len(field_info["sample_values"]) < 3:
+                        field_info["sample_values"].append(len(value))
+                elif isinstance(value, dict):
+                    field_info["types"].add("dict")
+                elif isinstance(value, bool):
+                    field_info["types"].add("boolean")
+                elif isinstance(value, (int, float)):
+                    field_info["types"].add("number")
+                elif isinstance(value, str):
+                    field_info["types"].add("string")
+                    field_info["max_length"] = max(field_info["max_length"], len(value))
+                    # Check if it looks like a date
+                    if any(pattern in value for pattern in ["-", "/", "T00:00:00"]) and len(value) <= 30:
+                        field_info["types"].add("date")
     
-    # If mixed categories, show summary
-    if len(categories) > 1:
-        columns.append({"key": "summary", "label": "Summary", "sortable": False, "width": "400"})
-        return columns
-    
-    # Define priority fields for each source type
-    source_priority_fields = {
-        "publications": ["journal", "authors", "pmid", "doi", "publication_type"],
-        "trials": ["status", "phase", "enrollment", "nct_id", "conditions"],
-        "community": ["community", "score", "reply_count", "author"],
-        "faers": ["report_type", "seriousness_criteria", "reactions", "drugs"]
-    }
-    
-    # Determine which priority fields to use
-    priority_fields = []
-    if len(categories) == 1:
-        category = list(categories)[0]
-        priority_fields = source_priority_fields.get(category, [])
-    
-    # Sort fields with priority
-    def field_sort_key(item):
-        field_name, field_info = item
-        # Priority fields come first
-        if field_name in priority_fields:
-            return (0, priority_fields.index(field_name))
-        # Then by frequency
-        return (1, -field_info["count"])
-    
+    # Sort fields by frequency and name
     sorted_fields = sorted(
-        metadata_fields.items(),
-        key=field_sort_key
+        metadata_analysis.items(),
+        key=lambda x: (-x[1]["non_null_count"], x[0])
     )
     
-    # Add up to 4 additional columns
-    added_columns = 0
+    # Generate column configs for all metadata fields
     for field_name, field_info in sorted_fields:
-        if added_columns >= 4:
-            break
-        
-        # Skip fields that are too sparse (unless they're priority fields)
-        if field_name not in priority_fields and field_info["count"] < len(results) * 0.3:
+        # Skip fields that are too sparse (less than 10% non-null)
+        if field_info["non_null_count"] < sample_size * 0.1:
             continue
-        
-        # Generate column configuration
+            
         col_config = {
             "key": f"metadata.{field_name}",
             "label": field_name.replace('_', ' ').title(),
             "sortable": False,
-            "width": "150"
+            "width": "150",
+            "group": "metadata",
+            "frequency": field_info["non_null_count"] / sample_size,
+            "sources": list(field_info["sources"])
         }
         
-        # Set render type based on field type and content
-        if field_info["type"] == "list":
+        # Determine render type and width based on detected types
+        types = field_info["types"]
+        
+        if "list" in types:
             col_config["render"] = "list"
             col_config["maxItems"] = 3
+            # Set width based on average list length
+            avg_length = sum(field_info["sample_values"]) / len(field_info["sample_values"]) if field_info["sample_values"] else 3
+            col_config["width"] = "200" if avg_length > 2 else "150"
+        elif "dict" in types:
+            col_config["render"] = "json"
             col_config["width"] = "200"
-        elif field_info["type"] == "number":
+        elif "boolean" in types:
+            col_config["render"] = "boolean"
+            col_config["width"] = "80"
+        elif "number" in types:
             col_config["render"] = "number"
             col_config["width"] = "100"
-        elif field_name.endswith("_url") or field_name == "doi":
-            col_config["render"] = "link"
-        elif field_name.endswith("_status") or field_name == "phase":
+        elif "date" in types or any(date_word in field_name.lower() for date_word in ["date", "time", "created", "updated", "received"]):
+            col_config["render"] = "date"
+            col_config["width"] = "120"
+        elif field_name in ["status", "phase", "report_type", "category", "qualification"]:
             col_config["render"] = "badge"
+            col_config["width"] = "120"
+        elif field_name.endswith("_url") or field_name in ["doi", "url", "link"]:
+            col_config["render"] = "link"
+            col_config["width"] = "150"
+        else:
+            # String type - adjust width based on content
+            if field_info["max_length"] > 100:
+                col_config["width"] = "250"
+            elif field_info["max_length"] > 50:
+                col_config["width"] = "200"
+            else:
+                col_config["width"] = "150"
         
         columns.append(col_config)
-        added_columns += 1
     
-    # Always add summary if we have room
-    if added_columns < 4:
-        columns.append({"key": "summary", "label": "Summary", "sortable": False, "width": "300"})
     
     return columns
 
@@ -747,6 +769,61 @@ async def unified_search(search_query: UnifiedSearchQuery):
                         filtered_metadata[field] = metadata[field]
                 metadata = filtered_metadata
             
+            # Determine the most relevant date for this source type
+            last_updated = None
+            if row['source_category'] == 'publications':
+                # For publications, use publication_date or created_date
+                if metadata.get('publication_date'):
+                    try:
+                        last_updated = datetime.fromisoformat(metadata['publication_date'].replace('Z', '+00:00'))
+                    except:
+                        pass
+                if not last_updated and metadata.get('created_date'):
+                    try:
+                        last_updated = datetime.fromisoformat(metadata['created_date'].replace('Z', '+00:00'))
+                    except:
+                        pass
+            elif row['source_category'] == 'trials':
+                # For trials, use last_update if available, else start_date
+                if metadata.get('last_update'):
+                    try:
+                        last_updated = datetime.fromisoformat(metadata['last_update'].replace('Z', '+00:00'))
+                    except:
+                        pass
+                if not last_updated and metadata.get('start_date'):
+                    try:
+                        last_updated = datetime.fromisoformat(metadata['start_date'].replace('Z', '+00:00'))
+                    except:
+                        pass
+                if not last_updated and metadata.get('study_start_date'):
+                    try:
+                        last_updated = datetime.fromisoformat(metadata['study_start_date'].replace('Z', '+00:00'))
+                    except:
+                        pass
+            elif row['source_category'] == 'community':
+                # For community posts, use created_date
+                if metadata.get('created_date'):
+                    try:
+                        last_updated = datetime.fromisoformat(metadata['created_date'].replace('Z', '+00:00'))
+                    except:
+                        pass
+            elif row['source_category'] == 'faers':
+                # For FAERS, use receive_date or receipt_date
+                if metadata.get('receive_date'):
+                    try:
+                        last_updated = datetime.fromisoformat(metadata['receive_date'].replace('Z', '+00:00'))
+                    except:
+                        pass
+                if not last_updated and metadata.get('receipt_date'):
+                    try:
+                        last_updated = datetime.fromisoformat(metadata['receipt_date'].replace('Z', '+00:00'))
+                    except:
+                        pass
+            
+            # Fallback to created_at if no source-specific date found
+            if not last_updated:
+                last_updated = row['created_at']
+            
             result = UnifiedSearchResult(
                 id=row['id'],
                 title=row['title'] or 'Untitled',
@@ -758,15 +835,16 @@ async def unified_search(search_query: UnifiedSearchQuery):
                 summary=row['summary'],
                 content_snippet=(row['content'][:200] + '...') if row['content'] else None,
                 diseases=row['disease_names'] or [],
-                metadata=metadata
+                metadata=metadata,
+                last_updated=last_updated
             )
             
             search_results.append(result)
         
         execution_time = int((time.time() - start_time) * 1000)
         
-        # Generate columns based on results
-        columns = generate_columns_for_results(search_results)
+        # Generate columns based on results and requested categories
+        columns = generate_columns_for_results(search_results, search_query.source_categories)
         
         return UnifiedSearchResponse(
             results=search_results,
