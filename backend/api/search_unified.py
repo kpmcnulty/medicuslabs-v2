@@ -6,12 +6,24 @@ from pydantic import BaseModel, Field
 import json
 import time
 from sqlalchemy.ext.asyncio import AsyncSession
+from dateutil import parser as date_parser
 
 from core.database import get_db, get_pg_connection
 from core.config import settings
 from models.schemas import SourceType
 
 router = APIRouter(prefix="/api/search", tags=["search"])
+
+def parse_date_value(value: Any) -> Any:
+    """Parse date string to datetime object for PostgreSQL"""
+    if isinstance(value, str):
+        try:
+            # Try to parse as date/datetime
+            return date_parser.parse(value)
+        except:
+            # If parsing fails, return original value
+            return value
+    return value
 
 
 class UnifiedSearchQuery(BaseModel):
@@ -314,11 +326,19 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                             param_count += 1
                         elif operator == 'equals':
                             column_conditions.append(f"{column_ref} = ${param_count}")
-                            params.append(str(value))
+                            # Convert date strings for date columns
+                            if column_id == 'created_at':
+                                params.append(parse_date_value(value))
+                            else:
+                                params.append(str(value))
                             param_count += 1
                         elif operator == 'notEqual':
                             column_conditions.append(f"{column_ref} != ${param_count}")
-                            params.append(str(value))
+                            # Convert date strings for date columns
+                            if column_id == 'created_at':
+                                params.append(parse_date_value(value))
+                            else:
+                                params.append(str(value))
                             param_count += 1
                         elif operator == 'startsWith':
                             column_conditions.append(f"{column_ref} ILIKE ${param_count}")
@@ -334,28 +354,44 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                                 column_conditions.append(f"({column_ref})::numeric > ${param_count}::numeric")
                             else:
                                 column_conditions.append(f"{column_ref} > ${param_count}")
-                            params.append(value)
+                            # Convert date strings for date columns
+                            if column_id == 'created_at':
+                                params.append(parse_date_value(value))
+                            else:
+                                params.append(value)
                             param_count += 1
                         elif operator == 'greaterThanOrEqual':
                             if column_id not in column_mapping:
                                 column_conditions.append(f"({column_ref})::numeric >= ${param_count}::numeric")
                             else:
                                 column_conditions.append(f"{column_ref} >= ${param_count}")
-                            params.append(value)
+                            # Convert date strings for date columns
+                            if column_id == 'created_at':
+                                params.append(parse_date_value(value))
+                            else:
+                                params.append(value)
                             param_count += 1
                         elif operator == 'lessThan':
                             if column_id not in column_mapping:
                                 column_conditions.append(f"({column_ref})::numeric < ${param_count}::numeric")
                             else:
                                 column_conditions.append(f"{column_ref} < ${param_count}")
-                            params.append(value)
+                            # Convert date strings for date columns
+                            if column_id == 'created_at':
+                                params.append(parse_date_value(value))
+                            else:
+                                params.append(value)
                             param_count += 1
                         elif operator == 'lessThanOrEqual':
                             if column_id not in column_mapping:
                                 column_conditions.append(f"({column_ref})::numeric <= ${param_count}::numeric")
                             else:
                                 column_conditions.append(f"{column_ref} <= ${param_count}")
-                            params.append(value)
+                            # Convert date strings for date columns
+                            if column_id == 'created_at':
+                                params.append(parse_date_value(value))
+                            else:
+                                params.append(value)
                             param_count += 1
                         elif operator == 'inRange':
                             if isinstance(value, list) and len(value) == 2:
@@ -363,7 +399,11 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                                     column_conditions.append(f"({column_ref})::numeric BETWEEN ${param_count}::numeric AND ${param_count + 1}::numeric")
                                 else:
                                     column_conditions.append(f"{column_ref} BETWEEN ${param_count} AND ${param_count + 1}")
-                                params.extend([value[0], value[1]])
+                                # Convert date strings for date columns
+                                if column_id == 'created_at':
+                                    params.extend([parse_date_value(value[0]), parse_date_value(value[1])])
+                                else:
+                                    params.extend([value[0], value[1]])
                                 param_count += 2
                         elif operator in ['before', 'after', 'between']:
                             # Date operators
@@ -372,21 +412,21 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                                     column_conditions.append(f"({column_ref})::timestamp < ${param_count}::timestamp")
                                 else:
                                     column_conditions.append(f"{column_ref} < ${param_count}::timestamp")
-                                params.append(value)
+                                params.append(parse_date_value(value))
                                 param_count += 1
                             elif operator == 'after':
                                 if column_id not in column_mapping:
                                     column_conditions.append(f"({column_ref})::timestamp > ${param_count}::timestamp")
                                 else:
                                     column_conditions.append(f"{column_ref} > ${param_count}::timestamp")
-                                params.append(value)
+                                params.append(parse_date_value(value))
                                 param_count += 1
                             elif operator == 'between' and isinstance(value, list) and len(value) == 2:
                                 if column_id not in column_mapping:
                                     column_conditions.append(f"({column_ref})::timestamp BETWEEN ${param_count}::timestamp AND ${param_count + 1}::timestamp")
                                 else:
                                     column_conditions.append(f"{column_ref} BETWEEN ${param_count}::timestamp AND ${param_count + 1}::timestamp")
-                                params.extend([value[0], value[1]])
+                                params.extend([parse_date_value(value[0]), parse_date_value(value[1])])
                                 param_count += 2
                     
                     if column_conditions:
@@ -864,85 +904,240 @@ async def suggest_filters(
     source: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Get suggested filters based on source type.
-    Returns common metadata fields and their types for building dynamic UIs.
+    Enhanced field metadata endpoint for advanced query builder.
+    Returns detailed field information including types, categories, operators, and sample values.
     """
     
     async with get_pg_connection() as conn:
         # Build source filter
         where_clause = "WHERE 1=1"
+        and_conditions = ""
         params = []
         param_count = 1
         
         if source:
             where_clause += f" AND s.name = ${param_count}"
+            and_conditions += f" AND s.name = ${param_count}"
             params.append(source)
             param_count += 1
         elif source_category:
             where_clause += f" AND s.category = ${param_count}"
+            and_conditions += f" AND s.category = ${param_count}"
             params.append(source_category)
             param_count += 1
         
-        # Get common metadata fields
+        # Sample from each source to capture all metadata schemas
         field_sql = f"""
-            WITH metadata_fields AS (
-                SELECT DISTINCT jsonb_object_keys(metadata) as field
+            WITH source_samples AS (
+                SELECT DISTINCT ON (s.name) 
+                    d.doc_metadata,
+                    s.category as source_category,
+                    s.name as source_name
                 FROM documents d
                 JOIN sources s ON d.source_id = s.id
-                {where_clause}
+                WHERE d.doc_metadata IS NOT NULL
+                {and_conditions}
+                ORDER BY s.name, d.created_at DESC
+            ),
+            metadata_fields AS (
+                SELECT DISTINCT 
+                    jsonb_object_keys(doc_metadata) as field,
+                    source_category,
+                    source_name,
+                    doc_metadata
+                FROM source_samples
             )
-            SELECT field, 
-                   COUNT(*) as doc_count,
-                   (SELECT jsonb_typeof(metadata->field) 
-                    FROM documents d2 
-                    JOIN sources s2 ON d2.source_id = s2.id
-                    WHERE d2.metadata->field IS NOT NULL 
-                    {where_clause.replace('$1', '$' + str(param_count))}
-                    LIMIT 1) as field_type
+            SELECT 
+                field,
+                COUNT(*) as doc_count,
+                COUNT(DISTINCT source_category) as category_count,
+                array_agg(DISTINCT source_category) as source_categories,
+                'string' as field_type,
+                COUNT(DISTINCT source_name) as unique_values
             FROM metadata_fields
             GROUP BY field
-            ORDER BY doc_count DESC
+            ORDER BY doc_count DESC, field ASC
+            LIMIT 100
         """
-        
-        if params:
-            params.extend(params)  # Duplicate params for subquery
         
         fields = await conn.fetch(field_sql, *params)
         
-        # Build suggested filters structure
+        # Enhanced operator mappings
+        operators = {
+            "string": ["$eq", "$ne", "$contains", "$startsWith", "$endsWith", "$regex", "$in", "$nin", "$exists"],
+            "number": ["$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$between", "$in", "$nin", "$exists"],
+            "date": ["$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$between", "$exists"],
+            "array": ["$contains", "$all", "$in", "$nin", "$exists"],
+            "object": ["$exists"],
+            "boolean": ["$eq", "$ne", "$exists"]
+        }
+        
+        # Core fields that always appear first
+        core_fields = ["title", "source", "created_at", "summary", "url"]
+        
         suggestions = {
             "fields": [],
-            "operators": {
-                "string": ["$eq", "$ne", "$regex", "$exists"],
-                "number": ["$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$exists"],
-                "array": ["$contains", "$exists"],
-                "object": ["$exists"],
-                "boolean": ["$eq", "$ne", "$exists"]
+            "operators": operators,
+            "categories": {
+                "core": "Core Fields",
+                "publication": "Publication Data", 
+                "trial": "Clinical Trial Data",
+                "community": "Community Data",
+                "faers": "Adverse Event Data",
+                "dates": "Date Fields",
+                "identifiers": "Identifiers",
+                "other": "Other Fields"
             }
         }
         
+        # Helper function to categorize fields
+        def categorize_field(field_name: str, source_cats: list, field_type: str) -> str:
+            field_lower = field_name.lower()
+            
+            # Core fields
+            if field_name in core_fields:
+                return "core"
+            
+            # Date fields
+            if field_type == "date" or any(date_word in field_lower for date_word in 
+                ["date", "time", "created", "updated", "received", "published", "start", "end"]):
+                return "dates"
+            
+            # Identifiers
+            if any(id_word in field_lower for id_word in 
+                ["id", "pmid", "doi", "nct", "uuid", "identifier", "number"]):
+                return "identifiers"
+            
+            # Source-specific categorization
+            if len(source_cats) == 1:
+                cat = source_cats[0]
+                if cat == "publications":
+                    return "publication"
+                elif cat == "trials":
+                    return "trial"
+                elif cat == "community":
+                    return "community"
+                elif cat == "faers":
+                    return "faers"
+            
+            return "other"
+        
+        # Helper function to generate field description
+        def generate_description(field_name: str, field_type: str, doc_count: int, unique_values: int) -> str:
+            base_name = field_name.replace('_', ' ').title()
+            
+            # Just return the base name without counts since we're sampling
+            return base_name
+        
+        # Build enhanced field metadata
         for row in fields:
+            field_name = row['field']
+            field_type = row['field_type'] or 'string'
+            doc_count = row['doc_count']
+            unique_values = row['unique_values'] or 0
+            source_categories = row['source_categories'] or []
+            
+            # Generate field metadata
             field_info = {
-                "name": row['field'],
-                "type": row['field_type'],
-                "document_count": row['doc_count'],
-                "operators": suggestions["operators"].get(row['field_type'], ["$exists"])
+                "name": field_name,
+                "label": field_name.replace('_', ' ').title(),
+                "type": field_type,
+                "category": categorize_field(field_name, source_categories, field_type),
+                "description": generate_description(field_name, field_type, doc_count, unique_values),
+                "document_count": doc_count,
+                "unique_values": unique_values,
+                "source_categories": source_categories if field_name not in core_fields else ['Common'],
+                "operators": operators.get(field_type, ["$exists"])
             }
             
-            # Get sample values for certain fields
-            if row['field_type'] in ['string', 'number'] and row['doc_count'] < 1000:
-                sample_sql = f"""
-                    SELECT DISTINCT metadata->>'{row['field']}' as value
-                    FROM documents d
-                    JOIN sources s ON d.source_id = s.id
-                    WHERE metadata->>'{row['field']}' IS NOT NULL
-                    {where_clause}
-                    LIMIT 10
-                """
-                samples = await conn.fetch(sample_sql, *params)
-                field_info['sample_values'] = [s['value'] for s in samples]
+            # Get sample values for appropriate fields
+            if field_type in ['string', 'number'] and unique_values <= 50 and doc_count >= 10:
+                try:
+                    sample_sql = f"""
+                        SELECT DISTINCT doc_metadata->>'{field_name}' as value, COUNT(*) as count
+                        FROM documents d
+                        JOIN sources s ON d.source_id = s.id
+                        WHERE doc_metadata->>'{field_name}' IS NOT NULL 
+                        AND doc_metadata->>'{field_name}' != ''
+                        {where_clause}
+                        GROUP BY doc_metadata->>'{field_name}'
+                        ORDER BY count DESC, value ASC
+                        LIMIT 15
+                    """
+                    samples = await conn.fetch(sample_sql, *params)
+                    field_info['sample_values'] = [
+                        {"value": s['value'], "count": s['count']} 
+                        for s in samples if s['value']
+                    ]
+                except Exception:
+                    field_info['sample_values'] = []
             
             suggestions["fields"].append(field_info)
+        
+        # Add core document fields that might not be in metadata
+        core_doc_fields = [
+            {
+                "name": "title",
+                "label": "Title", 
+                "type": "string",
+                "category": "core",
+                "description": "Document title",
+                "operators": operators["string"],
+                "source_categories": ['Common']
+            },
+            {
+                "name": "source",
+                "label": "Source",
+                "type": "string", 
+                "category": "core",
+                "description": "Data source name",
+                "operators": operators["string"],
+                "source_categories": ['Common']
+            },
+            {
+                "name": "created_at",
+                "label": "Scraped Date",
+                "type": "date",
+                "category": "dates", 
+                "description": "Date when document was scraped/collected",
+                "operators": operators["date"],
+                "source_categories": ['Common']
+            },
+            {
+                "name": "summary",
+                "label": "Summary",
+                "type": "string",
+                "category": "core",
+                "description": "Document summary",
+                "operators": operators["string"],
+                "source_categories": ['Common']
+            },
+            {
+                "name": "url",
+                "label": "URL",
+                "type": "string",
+                "category": "core",
+                "description": "Source URL",
+                "operators": operators["string"],
+                "source_categories": ['Common']
+            }
+        ]
+        
+        # Add core fields if not already present
+        existing_field_names = {f["name"] for f in suggestions["fields"]}
+        for core_field in core_doc_fields:
+            if core_field["name"] not in existing_field_names:
+                suggestions["fields"].insert(0, core_field)
+        
+        # Sort fields: core first, then by category and frequency
+        category_order = ["core", "dates", "identifiers", "publication", "trial", "community", "faers", "other"]
+        
+        def sort_key(field):
+            cat_idx = category_order.index(field.get("category", "other"))
+            doc_count = field.get("document_count", 0)
+            return (cat_idx, -doc_count, field["name"])
+        
+        suggestions["fields"].sort(key=sort_key)
         
         return suggestions
 

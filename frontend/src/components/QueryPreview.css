@@ -1,0 +1,378 @@
+/* QueryPreview Component Styles */
+.query-preview {
+  background: #f8f9fa;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  margin: 16px 0;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Preview Header */
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.preview-info h4 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.query-stats {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.stat {
+  font-size: 13px;
+  color: #5f6368;
+}
+
+.stat strong {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.validation-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.validation-status.valid {
+  background: #e6f4ea;
+  color: #137333;
+}
+
+.validation-status.invalid {
+  background: #fce8e6;
+  color: #d93025;
+}
+
+.toggle-details {
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toggle-details:hover {
+  background: #1557b0;
+}
+
+/* Preview Content */
+.preview-content {
+  padding: 16px;
+}
+
+.human-readable {
+  background: white;
+  border: 1px solid #e8eaed;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.human-readable strong {
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+/* Validation Messages */
+.validation-messages {
+  background: #fef7e0;
+  border: 1px solid #fbbc04;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.validation-messages h5 {
+  margin: 0 0 8px 0;
+  color: #ea8600;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.validation-messages ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.validation-messages li {
+  color: #ea8600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+/* Query Details */
+.query-details {
+  background: white;
+  border: 1px solid #e8eaed;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* Detail Tabs */
+.detail-tabs {
+  display: flex;
+  border-bottom: 1px solid #e8eaed;
+  background: #f8f9fa;
+}
+
+.tab-button {
+  background: none;
+  border: none;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5f6368;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-button:hover {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+
+.tab-button.active {
+  color: #1a73e8;
+  border-bottom-color: #1a73e8;
+  background: white;
+}
+
+/* Detail Content */
+.detail-content {
+  padding: 16px;
+}
+
+.human-detail p {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1a1a1a;
+}
+
+.query-breakdown h6 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5f6368;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.json-detail h6,
+.mongo-detail h6 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5f6368;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Code Block */
+.code-block {
+  background: #f8f9fa;
+  border: 1px solid #e8eaed;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #1a1a1a;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Query Breakdown */
+.query-breakdown-group {
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #1a1a1a;
+}
+
+.group-indicator {
+  color: #1a73e8;
+  font-weight: 600;
+  margin: 4px 0;
+}
+
+.condition-breakdown {
+  color: #5f6368;
+  margin: 2px 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .preview-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .query-stats {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .detail-tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab-button {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .code-block {
+    font-size: 11px;
+  }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  .query-preview {
+    background: #1f1f1f;
+    border-color: #404040;
+    color: #e0e0e0;
+  }
+
+  .preview-header {
+    background: #2a2a2a;
+    border-bottom-color: #404040;
+  }
+
+  .preview-info h4 {
+    color: #e0e0e0;
+  }
+
+  .stat {
+    color: #9aa0a6;
+  }
+
+  .stat strong {
+    color: #e0e0e0;
+  }
+
+  .human-readable,
+  .query-details {
+    background: #2a2a2a;
+    border-color: #404040;
+  }
+
+  .detail-tabs {
+    background: #1f1f1f;
+    border-bottom-color: #404040;
+  }
+
+  .tab-button {
+    color: #9aa0a6;
+  }
+
+  .tab-button:hover {
+    background: #3c4043;
+    color: #8ab4f8;
+  }
+
+  .tab-button.active {
+    color: #8ab4f8;
+    border-bottom-color: #8ab4f8;
+    background: #2a2a2a;
+  }
+
+  .code-block {
+    background: #1f1f1f;
+    border-color: #404040;
+    color: #e0e0e0;
+  }
+
+  .validation-messages {
+    background: #3c2e1e;
+    border-color: #8d6e00;
+  }
+
+  .validation-messages h5,
+  .validation-messages li {
+    color: #fcc934;
+  }
+
+  .group-indicator {
+    color: #8ab4f8;
+  }
+
+  .condition-breakdown {
+    color: #9aa0a6;
+  }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+  .query-preview {
+    border-width: 2px;
+  }
+
+  .validation-status {
+    border: 2px solid currentColor;
+  }
+
+  .code-block {
+    border-width: 2px;
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .toggle-details,
+  .tab-button {
+    transition: none;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .query-preview {
+    background: white;
+    border: 1px solid #000;
+  }
+
+  .toggle-details {
+    display: none;
+  }
+
+  .detail-tabs {
+    display: none;
+  }
+
+  .detail-content {
+    display: block !important;
+  }
+
+  .code-block {
+    background: #f5f5f5;
+    border: 1px solid #999;
+  }
+}

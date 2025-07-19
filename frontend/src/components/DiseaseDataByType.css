@@ -39,6 +39,68 @@
   margin-bottom: 30px;
 }
 
+/* Search Mode Toggle */
+.search-mode-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  background: #f1f3f4;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.mode-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5f6368;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-button:hover {
+  background: rgba(26, 115, 232, 0.08);
+  color: #1a73e8;
+}
+
+.mode-button.active {
+  background: white;
+  color: #1a73e8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.mode-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Advanced Search Section */
+.advanced-search-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.disease-selector-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.main-query-builder {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+}
+
 .search-row {
   display: flex;
   gap: 20px;

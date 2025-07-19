@@ -1,0 +1,482 @@
+/* QueryBuilder Component Styles */
+.query-builder {
+  background: #ffffff;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 16px 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.query-builder.loading {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Header */
+.query-builder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #f1f3f4;
+}
+
+.query-builder-header h3 {
+  margin: 0;
+  color: #1a1a1a;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.validation-indicator {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.validation-indicator.valid {
+  color: #137333;
+  background-color: #e6f4ea;
+}
+
+.validation-indicator.invalid {
+  color: #d93025;
+  background-color: #fce8e6;
+}
+
+.clear-button {
+  background: #f8f9fa;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-button:hover {
+  background: #e8eaed;
+  border-color: #bdc1c6;
+}
+
+/* Query Group */
+.query-group {
+  position: relative;
+}
+
+.query-group:not(.root-group) {
+  background: #f8f9fa;
+  border: 1px solid #e8eaed;
+  border-radius: 6px;
+  padding: 16px;
+  margin: 8px 0;
+}
+
+.group-operator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.operator-toggle {
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 60px;
+}
+
+.operator-toggle:hover {
+  background: #1557b0;
+  transform: scale(1.02);
+}
+
+.operator-toggle.and {
+  background: #1a73e8;
+}
+
+.operator-toggle.or {
+  background: #9333ea;
+}
+
+.operator-toggle.or:hover {
+  background: #7c3aed;
+}
+
+.operator-description {
+  font-size: 13px;
+  color: #5f6368;
+  font-style: italic;
+}
+
+/* Group Content */
+.group-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Condition Wrapper */
+.condition-wrapper {
+  position: relative;
+}
+
+.condition-operator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8px 0;
+}
+
+.operator-badge {
+  background: #fff;
+  border: 2px solid #1a73e8;
+  color: #1a73e8;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.operator-badge.or {
+  border-color: #9333ea;
+  color: #9333ea;
+}
+
+/* Query Rule */
+.query-rule {
+  background: white;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  padding: 12px;
+  transition: all 0.2s ease;
+}
+
+.query-rule:hover {
+  border-color: #1a73e8;
+  box-shadow: 0 1px 3px rgba(26, 115, 232, 0.12);
+}
+
+.rule-content {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 2fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.rule-field,
+.rule-operator,
+.rule-value {
+  display: flex;
+  align-items: center;
+}
+
+.field-select,
+.operator-select,
+.value-input {
+  padding: 8px 12px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  transition: border-color 0.2s ease;
+}
+
+.field-select:focus,
+.operator-select:focus,
+.value-input:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.12);
+}
+
+.field-select {
+  min-width: 180px;
+}
+
+.operator-select {
+  min-width: 140px;
+}
+
+.value-input {
+  min-width: 160px;
+}
+
+.remove-condition-button {
+  background: #ea4335;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.remove-condition-button:hover {
+  background: #d23f31;
+  transform: scale(1.1);
+}
+
+/* Nested Groups */
+.nested-group-wrapper {
+  position: relative;
+}
+
+.nested-group {
+  background: white;
+  border: 2px dashed #dadce0;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 8px 0;
+}
+
+.nested-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.group-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #5f6368;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.remove-group-button {
+  background: #ea4335;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.remove-group-button:hover {
+  background: #d23f31;
+  transform: scale(1.1);
+}
+
+/* Group Actions */
+.group-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e8eaed;
+}
+
+.add-condition-button,
+.add-group-button {
+  background: #f8f9fa;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.add-condition-button:hover {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+  color: #1a73e8;
+}
+
+.add-group-button:hover {
+  background: #f3e8ff;
+  border-color: #9333ea;
+  color: #9333ea;
+}
+
+/* Loading State */
+.loading-state,
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #5f6368;
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.error-state h3 {
+  color: #ea4335;
+  margin: 0;
+  font-size: 18px;
+}
+
+.error-state p {
+  margin: 0;
+  color: #5f6368;
+}
+
+.retry-button {
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.retry-button:hover {
+  background: #1557b0;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e8eaed;
+  border-top: 3px solid #1a73e8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .query-builder-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .rule-content {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .field-select,
+  .operator-select,
+  .value-input {
+    width: 100%;
+  }
+
+  .remove-condition-button {
+    justify-self: end;
+  }
+
+  .group-actions {
+    flex-direction: column;
+  }
+
+  .add-condition-button,
+  .add-group-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Accessibility */
+.query-builder button:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+.query-builder select:focus,
+.query-builder input:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.12);
+}
+
+/* Animation for smooth transitions */
+.condition-wrapper,
+.nested-group-wrapper {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dark mode support (if needed) */
+@media (prefers-color-scheme: dark) {
+  .query-builder {
+    background: #1f1f1f;
+    border-color: #404040;
+    color: #e0e0e0;
+  }
+
+  .query-builder-header {
+    border-bottom-color: #404040;
+  }
+
+  .query-builder-header h3 {
+    color: #e0e0e0;
+  }
+
+  .query-rule {
+    background: #2a2a2a;
+    border-color: #404040;
+  }
+
+  .field-select,
+  .operator-select,
+  .value-input {
+    background: #2a2a2a;
+    border-color: #404040;
+    color: #e0e0e0;
+  }
+
+  .nested-group {
+    background: #2a2a2a;
+    border-color: #404040;
+  }
+}
