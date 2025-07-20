@@ -434,10 +434,6 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
             <tr 
               key={row.id}
               className="data-row"
-              onClick={() => {
-                setSelectedRow(row.original);
-                setShowDetailModal(true);
-              }}
             >
               {row.getVisibleCells().map(cell => {
                 const isPinned = cell.column.getIsPinned();
@@ -446,7 +442,14 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
                 
                 return (
                   <td 
-                    key={cell.id} 
+                    key={cell.id}
+                    onClick={() => {
+                      // Don't open modal when clicking select checkbox
+                      if (cell.column.id !== 'select') {
+                        setSelectedRow(row.original);
+                        setShowDetailModal(true);
+                      }
+                    }}
                     style={{ 
                       width: cell.column.getSize(),
                       position: isPinned ? 'sticky' : 'relative',

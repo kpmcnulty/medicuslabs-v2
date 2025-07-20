@@ -86,6 +86,7 @@ class UnifiedSearchResult(BaseModel):
     summary: Optional[str] = None
     content_snippet: Optional[str] = None
     diseases: List[str] = []
+    created_date: Optional[datetime] = None  # When content was originally created
     updated_at: Optional[datetime] = None  # When we last updated it
     source_updated_at: Optional[datetime] = None  # When source last updated it
     
@@ -294,7 +295,13 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                     'created_at': 'd.created_at',
                     'updated_at': 'd.updated_at',
                     'source_updated_at': 'd.source_updated_at',
-                    'summary': 'd.summary'
+                    'summary': 'd.summary',
+                    'created_date': """CASE 
+                        WHEN s.category = 'community' THEN COALESCE((d.doc_metadata->>'posted_date')::timestamp, (d.doc_metadata->>'created_date')::timestamp)
+                        WHEN s.category = 'publications' THEN (d.doc_metadata->>'publication_date')::date
+                        WHEN s.category = 'trials' THEN COALESCE((d.doc_metadata->>'start_date')::date, (d.doc_metadata->>'study_start_date')::date)
+                        ELSE d.created_at
+                    END"""
                 }
                 
                 # Use mapped column or metadata field
@@ -360,7 +367,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                             else:
                                 column_conditions.append(f"{column_ref} > ${param_count}")
                             # Convert date strings for date columns
-                            if column_id == 'created_at':
+                            if column_id in ['created_at', 'created_date', 'updated_at', 'source_updated_at']:
                                 params.append(parse_date_value(value))
                             else:
                                 params.append(value)
@@ -371,7 +378,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                             else:
                                 column_conditions.append(f"{column_ref} >= ${param_count}")
                             # Convert date strings for date columns
-                            if column_id == 'created_at':
+                            if column_id in ['created_at', 'created_date', 'updated_at', 'source_updated_at']:
                                 params.append(parse_date_value(value))
                             else:
                                 params.append(value)
@@ -382,7 +389,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                             else:
                                 column_conditions.append(f"{column_ref} < ${param_count}")
                             # Convert date strings for date columns
-                            if column_id == 'created_at':
+                            if column_id in ['created_at', 'created_date', 'updated_at', 'source_updated_at']:
                                 params.append(parse_date_value(value))
                             else:
                                 params.append(value)
@@ -393,7 +400,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                             else:
                                 column_conditions.append(f"{column_ref} <= ${param_count}")
                             # Convert date strings for date columns
-                            if column_id == 'created_at':
+                            if column_id in ['created_at', 'created_date', 'updated_at', 'source_updated_at']:
                                 params.append(parse_date_value(value))
                             else:
                                 params.append(value)
@@ -458,6 +465,13 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
         sql += f" ORDER BY source_category {search_query.sort_order.upper()}"
     elif search_query.sort_by == "title":
         sql += f" ORDER BY title {search_query.sort_order.upper()}"
+    elif search_query.sort_by == "created_date":
+        sql += f""" ORDER BY CASE 
+            WHEN source_category = 'community' THEN COALESCE((doc_metadata->>'posted_date')::timestamp, (doc_metadata->>'created_date')::timestamp)
+            WHEN source_category = 'publications' THEN (doc_metadata->>'publication_date')::date
+            WHEN source_category = 'trials' THEN COALESCE((doc_metadata->>'start_date')::date, (doc_metadata->>'study_start_date')::date)
+            ELSE created_at
+        END {search_query.sort_order.upper()}"""
     elif search_query.sort_by == "updated_at":
         sql += f" ORDER BY updated_at {search_query.sort_order.upper()}"
     elif search_query.sort_by == "source_updated_at":
@@ -585,8 +599,9 @@ def generate_columns_for_results(results: List[UnifiedSearchResult], requested_c
         {"key": "title", "label": "Title", "sortable": True, "width": "300", "frozen": True},
         {"key": "source", "label": "Source", "sortable": True, "width": "150", "frozen": True},
         {"key": "source_category", "label": "Type", "sortable": True, "width": "100", "render": "badge"},
-        {"key": "source_updated_at", "label": "Source Date", "sortable": True, "width": "120", "render": "date"},
-        {"key": "updated_at", "label": "Last Updated", "sortable": True, "width": "120", "render": "date"}
+        {"key": "created_date", "label": "Created", "sortable": True, "width": "120", "render": "date"},
+        {"key": "source_updated_at", "label": "Last Activity", "sortable": True, "width": "120", "render": "date"},
+        {"key": "updated_at", "label": "Scraped", "sortable": True, "width": "120", "render": "date"}
     ]
     
     # If no results, just return base columns
@@ -646,10 +661,28 @@ def generate_columns_for_results(results: List[UnifiedSearchResult], requested_c
         # Skip fields that are too sparse (less than 10% non-null)
         if field_info["non_null_count"] < sample_size * 0.1:
             continue
+        
+        # Skip redundant date fields for Reddit sources
+        if field_name == "posted_date" and "community" in field_info["sources"]:
+            # Skip this field as it's redundant with source_updated_at
+            continue
+            
+        # Determine custom label based on field and source
+        label = field_name.replace('_', ' ').title()
+        
+        # Custom labels for specific fields
+        if field_name == "publication_date" and "publications" in field_info["sources"]:
+            label = "Publication Date"
+        elif field_name == "electronic_publication_date" and "publications" in field_info["sources"]:
+            label = "Electronic Pub Date"
+        elif field_name == "posted_date" and "community" in field_info["sources"]:
+            label = "Posted"
+        elif field_name == "last_update" and "trials" in field_info["sources"]:
+            label = "Last Updated"
             
         col_config = {
             "key": f"metadata.{field_name}",
-            "label": field_name.replace('_', ' ').title(),
+            "label": label,
             "sortable": False,
             "width": "150",
             "group": "metadata",
@@ -782,6 +815,38 @@ async def unified_search(search_query: UnifiedSearchQuery):
                 metadata = filtered_metadata
             
             
+            # Extract created date based on source type
+            created_date = None
+            if metadata:
+                if row['source_category'] == 'community':
+                    # For Reddit, use posted_date (new) or created_date (legacy)
+                    posted_date_str = metadata.get('posted_date') or metadata.get('created_date')
+                    if posted_date_str:
+                        try:
+                            created_date = datetime.fromisoformat(posted_date_str.replace('Z', '+00:00'))
+                        except:
+                            pass
+                elif row['source_category'] == 'publications':
+                    # For PubMed, use publication_date
+                    pub_date_str = metadata.get('publication_date')
+                    if pub_date_str:
+                        try:
+                            created_date = datetime.strptime(pub_date_str, "%Y-%m-%d")
+                        except:
+                            pass
+                elif row['source_category'] == 'trials':
+                    # For ClinicalTrials, use start_date or study_start_date
+                    start_date_str = metadata.get('start_date') or metadata.get('study_start_date')
+                    if start_date_str:
+                        try:
+                            created_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+                        except:
+                            pass
+            
+            # Fallback to created_at if no specific date found
+            if not created_date:
+                created_date = row['created_at']
+            
             result = UnifiedSearchResult(
                 id=row['id'],
                 title=row['title'] or 'Untitled',
@@ -789,6 +854,7 @@ async def unified_search(search_query: UnifiedSearchQuery):
                 source=row['source_name'],
                 source_category=row['source_category'],
                 created_at=row['created_at'],
+                created_date=created_date,
                 updated_at=row['updated_at'],
                 source_updated_at=row['source_updated_at'],
                 relevance_score=float(row['rank']) if row.get('rank') else 1.0,

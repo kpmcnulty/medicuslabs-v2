@@ -252,6 +252,17 @@ class RedditScraper(BaseScraper):
         if raw_data.get('selftext'):
             summary += f" - {raw_data['selftext'][:200]}"
         
+        # Calculate last activity date (latest of post creation or last comment)
+        post_created = datetime.fromtimestamp(raw_data['created_utc'])
+        last_activity = post_created
+        
+        # Check for latest comment date
+        if raw_data.get('comments'):
+            for comment in raw_data['comments']:
+                comment_date = datetime.fromtimestamp(comment['created_utc'])
+                if comment_date > last_activity:
+                    last_activity = comment_date
+        
         # Build metadata with generic field names
         metadata = {
             'post_id': post_id,
@@ -260,7 +271,8 @@ class RedditScraper(BaseScraper):
             'score': raw_data['score'],
             'reply_count': raw_data['num_comments'],  # Generic "reply_count" instead of "num_comments"
             'engagement_ratio': raw_data.get('upvote_ratio', 0),  # Generic engagement metric
-            'created_date': datetime.fromtimestamp(raw_data['created_utc']).isoformat(),
+            'posted_date': datetime.fromtimestamp(raw_data['created_utc']).isoformat(),
+            'last_activity_date': last_activity.isoformat(),  # Track last comment/activity
             'category': raw_data.get('link_flair_text', ''),  # Generic "category" instead of "link_flair"
             'is_original_content': raw_data.get('is_self', True),  # Generic term
             'top_replies': [  # Generic "replies" instead of "comments"
@@ -268,14 +280,14 @@ class RedditScraper(BaseScraper):
                     'author': c['author'],
                     'body': c['body'],
                     'score': c['score'],
-                    'created_date': datetime.fromtimestamp(c['created_utc']).isoformat()
+                    'posted_date': datetime.fromtimestamp(c['created_utc']).isoformat()
                 }
                 for c in raw_data.get('comments', [])[:10]  # Store metadata for top 10 comments
             ]
         }
         
-        # Extract post date
-        source_updated_at = datetime.fromtimestamp(raw_data['created_utc'])
+        # Use last activity as source_updated_at
+        source_updated_at = last_activity
         
         return DocumentCreate(
             source_id=self.source_id,

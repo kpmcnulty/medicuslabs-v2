@@ -605,11 +605,34 @@ class PubMedScraper(BaseScraper):
         
         # Extract publication/update date
         source_updated_at = None
+        
+        # First set base publication date
         try:
             if pub_date:
                 source_updated_at = datetime.strptime(pub_date, "%Y-%m-%d")
         except:
             pass
+        
+        # Check for revision dates in publication history
+        last_revised = None
+        pub_history = raw_data.get("publication_history", [])
+        for hist in pub_history:
+            if hist.get("status") == "revised":
+                try:
+                    year = hist.get('year', '')
+                    month = hist.get('month', '01').zfill(2)
+                    day = hist.get('day', '01').zfill(2)
+                    if year:
+                        revised_date = datetime.strptime(f"{year}-{month}-{day}", "%Y-%m-%d")
+                        if not last_revised or revised_date > last_revised:
+                            last_revised = revised_date
+                except:
+                    pass
+        
+        # Use revision date if it's more recent than publication date
+        if last_revised and source_updated_at and last_revised > source_updated_at:
+            source_updated_at = last_revised
+            metadata["last_revised_date"] = last_revised.strftime("%Y-%m-%d")
         
         return DocumentCreate(
             source_id=self.source_id,
