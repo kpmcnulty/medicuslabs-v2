@@ -86,7 +86,8 @@ class UnifiedSearchResult(BaseModel):
     summary: Optional[str] = None
     content_snippet: Optional[str] = None
     diseases: List[str] = []
-    last_updated: Optional[datetime] = None  # Unified date field
+    updated_at: Optional[datetime] = None  # When we last updated it
+    source_updated_at: Optional[datetime] = None  # When source last updated it
     
     # All metadata as flexible JSON
     metadata: Dict[str, Any] = {}
@@ -208,6 +209,8 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                 d.summary,
                 d.content,
                 d.created_at,
+                d.updated_at,
+                d.source_updated_at,
                 d.doc_metadata,
                 s.name as source_name,
                 s.category as source_category,
@@ -289,6 +292,8 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                     'url': 'd.url',
                     'source': 's.name',
                     'created_at': 'd.created_at',
+                    'updated_at': 'd.updated_at',
+                    'source_updated_at': 'd.source_updated_at',
                     'summary': 'd.summary'
                 }
                 
@@ -453,44 +458,10 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
         sql += f" ORDER BY source_category {search_query.sort_order.upper()}"
     elif search_query.sort_by == "title":
         sql += f" ORDER BY title {search_query.sort_order.upper()}"
-    elif search_query.sort_by == "last_updated":
-        # Sort by the most relevant date field based on source type
-        sql += f""" ORDER BY 
-            CASE 
-                WHEN source_category = 'publications' THEN 
-                    COALESCE(
-                        CASE WHEN doc_metadata->>'publication_date' != '' AND doc_metadata->>'publication_date' IS NOT NULL 
-                            THEN (doc_metadata->>'publication_date')::timestamp END,
-                        CASE WHEN doc_metadata->>'created_date' != '' AND doc_metadata->>'created_date' IS NOT NULL 
-                            THEN (doc_metadata->>'created_date')::timestamp END,
-                        created_at
-                    )
-                WHEN source_category = 'trials' THEN 
-                    COALESCE(
-                        CASE WHEN doc_metadata->>'last_update' != '' AND doc_metadata->>'last_update' IS NOT NULL 
-                            THEN (doc_metadata->>'last_update')::timestamp END,
-                        CASE WHEN doc_metadata->>'start_date' != '' AND doc_metadata->>'start_date' IS NOT NULL 
-                            THEN (doc_metadata->>'start_date')::timestamp END,
-                        CASE WHEN doc_metadata->>'study_start_date' != '' AND doc_metadata->>'study_start_date' IS NOT NULL 
-                            THEN (doc_metadata->>'study_start_date')::timestamp END,
-                        created_at
-                    )
-                WHEN source_category = 'community' THEN 
-                    COALESCE(
-                        CASE WHEN doc_metadata->>'created_date' != '' AND doc_metadata->>'created_date' IS NOT NULL 
-                            THEN (doc_metadata->>'created_date')::timestamp END,
-                        created_at
-                    )
-                WHEN source_category = 'faers' THEN 
-                    COALESCE(
-                        CASE WHEN doc_metadata->>'receive_date' != '' AND doc_metadata->>'receive_date' IS NOT NULL 
-                            THEN (doc_metadata->>'receive_date')::timestamp END,
-                        CASE WHEN doc_metadata->>'receipt_date' != '' AND doc_metadata->>'receipt_date' IS NOT NULL 
-                            THEN (doc_metadata->>'receipt_date')::timestamp END,
-                        created_at
-                    )
-                ELSE created_at
-            END {search_query.sort_order.upper()}"""
+    elif search_query.sort_by == "updated_at":
+        sql += f" ORDER BY updated_at {search_query.sort_order.upper()}"
+    elif search_query.sort_by == "source_updated_at":
+        sql += f" ORDER BY COALESCE(source_updated_at, created_at) {search_query.sort_order.upper()}"
     elif search_query.sort_by and "." in search_query.sort_by:
         # Sort by metadata field
         json_path = "->".join([f"'{part}'" for part in search_query.sort_by.split(".")])
@@ -614,7 +585,8 @@ def generate_columns_for_results(results: List[UnifiedSearchResult], requested_c
         {"key": "title", "label": "Title", "sortable": True, "width": "300", "frozen": True},
         {"key": "source", "label": "Source", "sortable": True, "width": "150", "frozen": True},
         {"key": "source_category", "label": "Type", "sortable": True, "width": "100", "render": "badge"},
-        {"key": "last_updated", "label": "Last Updated", "sortable": True, "width": "120", "render": "date"}
+        {"key": "source_updated_at", "label": "Source Date", "sortable": True, "width": "120", "render": "date"},
+        {"key": "updated_at", "label": "Last Updated", "sortable": True, "width": "120", "render": "date"}
     ]
     
     # If no results, just return base columns
@@ -809,60 +781,6 @@ async def unified_search(search_query: UnifiedSearchQuery):
                         filtered_metadata[field] = metadata[field]
                 metadata = filtered_metadata
             
-            # Determine the most relevant date for this source type
-            last_updated = None
-            if row['source_category'] == 'publications':
-                # For publications, use publication_date or created_date
-                if metadata.get('publication_date'):
-                    try:
-                        last_updated = datetime.fromisoformat(metadata['publication_date'].replace('Z', '+00:00'))
-                    except:
-                        pass
-                if not last_updated and metadata.get('created_date'):
-                    try:
-                        last_updated = datetime.fromisoformat(metadata['created_date'].replace('Z', '+00:00'))
-                    except:
-                        pass
-            elif row['source_category'] == 'trials':
-                # For trials, use last_update if available, else start_date
-                if metadata.get('last_update'):
-                    try:
-                        last_updated = datetime.fromisoformat(metadata['last_update'].replace('Z', '+00:00'))
-                    except:
-                        pass
-                if not last_updated and metadata.get('start_date'):
-                    try:
-                        last_updated = datetime.fromisoformat(metadata['start_date'].replace('Z', '+00:00'))
-                    except:
-                        pass
-                if not last_updated and metadata.get('study_start_date'):
-                    try:
-                        last_updated = datetime.fromisoformat(metadata['study_start_date'].replace('Z', '+00:00'))
-                    except:
-                        pass
-            elif row['source_category'] == 'community':
-                # For community posts, use created_date
-                if metadata.get('created_date'):
-                    try:
-                        last_updated = datetime.fromisoformat(metadata['created_date'].replace('Z', '+00:00'))
-                    except:
-                        pass
-            elif row['source_category'] == 'faers':
-                # For FAERS, use receive_date or receipt_date
-                if metadata.get('receive_date'):
-                    try:
-                        last_updated = datetime.fromisoformat(metadata['receive_date'].replace('Z', '+00:00'))
-                    except:
-                        pass
-                if not last_updated and metadata.get('receipt_date'):
-                    try:
-                        last_updated = datetime.fromisoformat(metadata['receipt_date'].replace('Z', '+00:00'))
-                    except:
-                        pass
-            
-            # Fallback to created_at if no source-specific date found
-            if not last_updated:
-                last_updated = row['created_at']
             
             result = UnifiedSearchResult(
                 id=row['id'],
@@ -871,12 +789,13 @@ async def unified_search(search_query: UnifiedSearchQuery):
                 source=row['source_name'],
                 source_category=row['source_category'],
                 created_at=row['created_at'],
+                updated_at=row['updated_at'],
+                source_updated_at=row['source_updated_at'],
                 relevance_score=float(row['rank']) if row.get('rank') else 1.0,
                 summary=row['summary'],
                 content_snippet=(row['content'][:200] + '...') if row['content'] else None,
                 diseases=row['disease_names'] or [],
-                metadata=metadata,
-                last_updated=last_updated
+                metadata=metadata
             )
             
             search_results.append(result)
@@ -973,7 +892,7 @@ async def suggest_filters(
         }
         
         # Core fields that always appear first
-        core_fields = ["title", "source", "created_at", "summary", "url"]
+        core_fields = ["_fulltext", "title", "source", "created_at", "updated_at", "source_updated_at", "summary", "url"]
         
         suggestions = {
             "fields": [],
@@ -1077,6 +996,15 @@ async def suggest_filters(
         # Add core document fields that might not be in metadata
         core_doc_fields = [
             {
+                "name": "_fulltext",
+                "label": "Full Text Search",
+                "type": "string",
+                "category": "core",
+                "description": "Search across title, content, and summary",
+                "operators": ["$contains"],
+                "source_categories": ['Common']
+            },
+            {
                 "name": "title",
                 "label": "Title", 
                 "type": "string",
@@ -1100,6 +1028,24 @@ async def suggest_filters(
                 "type": "date",
                 "category": "dates", 
                 "description": "Date when document was scraped/collected",
+                "operators": operators["date"],
+                "source_categories": ['Common']
+            },
+            {
+                "name": "updated_at",
+                "label": "Last Updated",
+                "type": "date",
+                "category": "dates",
+                "description": "Date when document was last updated in our database",
+                "operators": operators["date"],
+                "source_categories": ['Common']
+            },
+            {
+                "name": "source_updated_at",
+                "label": "Source Date",
+                "type": "date",
+                "category": "dates",
+                "description": "Date when the source indicates the document was last modified",
                 "operators": operators["date"],
                 "source_categories": ['Common']
             },

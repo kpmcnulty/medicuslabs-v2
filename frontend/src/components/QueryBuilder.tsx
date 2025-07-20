@@ -73,11 +73,40 @@ export const OPERATORS = {
 // Helper to generate unique IDs
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+// Get smart default operator for a field
+const getDefaultOperator = (fieldName: string, fieldType: string): string => {
+  const field = fieldName.toLowerCase();
+  
+  // Text fields that should default to contains
+  if (field === '_fulltext' || field.includes('summary') || field.includes('content') || 
+      field.includes('description') || field.includes('text') || field.includes('body')) {
+    return '$contains';
+  }
+  
+  // ID fields should use equals
+  if (field.includes('id') || field === 'pmid' || field === 'nct' || field === 'doi') {
+    return '$eq';
+  }
+  
+  // Date fields often use greater than
+  if (fieldType === 'date' && (field.includes('updated') || field.includes('created'))) {
+    return '$gte';
+  }
+  
+  // Arrays default to contains
+  if (fieldType === 'array') {
+    return '$contains';
+  }
+  
+  // Default fallback
+  return '$eq';
+};
+
 // Helper to create empty condition
-const createEmptyCondition = (field?: string): QueryCondition => ({
+const createEmptyCondition = (field?: string, fieldType?: string): QueryCondition => ({
   id: generateId(),
   field: field || '',
-  operator: '$eq',
+  operator: field && fieldType ? getDefaultOperator(field, fieldType) : '$eq',
   value: ''
 });
 
@@ -195,7 +224,7 @@ const QueryBuilder: React.FC<QueryBuilderProps> = ({
       if (group.id === groupId) {
         return {
           ...group,
-          conditions: [...group.conditions, createEmptyCondition(field)]
+          conditions: [...group.conditions, createEmptyCondition(field, availableFields.find(f => f.name === field)?.type)]
         };
       }
       
@@ -509,9 +538,15 @@ const QueryBuilderRule: React.FC<QueryBuilderRuleProps> = ({
     const field = availableFields.find(f => f.name === fieldName);
     const validOperators = field ? getOperatorsForType(field.type) : ['$eq'];
     
+    // Get smart default operator for this field
+    const defaultOp = field ? getDefaultOperator(fieldName, field.type) : '$eq';
+    
+    // Use default operator if it's valid, otherwise fall back to first valid operator
+    const newOperator = validOperators.includes(defaultOp) ? defaultOp : validOperators[0];
+    
     onUpdate({ 
       field: fieldName,
-      operator: validOperators.includes(condition.operator) ? condition.operator : validOperators[0],
+      operator: newOperator,
       value: '' // Reset value when field changes
     });
   };

@@ -207,8 +207,7 @@ class ClinicalTrialsScraper(BaseScraper):
             title=title,
             content=content,
             summary=summary,
-            metadata=metadata,
-            scraped_at=datetime.now()
+            metadata=metadata
         ), source_updated_at
     
     def _extract_eligibility(self, eligibility_module: Dict[str, Any]) -> Dict[str, Any]:

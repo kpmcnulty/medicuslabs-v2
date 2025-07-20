@@ -87,6 +87,14 @@ export const useFieldMetadata = (options: UseFieldMetadataOptions = {}): UseFiel
   // Fallback field metadata if API call fails
   const getFallbackFields = (): FieldMetadata[] => [
     {
+      name: '_fulltext',
+      label: 'Full Text Search',
+      type: 'string',
+      category: 'core',
+      description: 'Search across title, content, and summary',
+      operators: ['$contains']
+    },
+    {
       name: 'title',
       label: 'Title',
       type: 'string',
@@ -108,6 +116,14 @@ export const useFieldMetadata = (options: UseFieldMetadataOptions = {}): UseFiel
       type: 'date',
       category: 'dates',
       description: 'Date when document was scraped/collected',
+      operators: ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$between', '$exists']
+    },
+    {
+      name: 'updated_at',
+      label: 'Last Updated',
+      type: 'date',
+      category: 'dates',
+      description: 'Date when document was last updated in our database',
       operators: ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$between', '$exists']
     },
     {

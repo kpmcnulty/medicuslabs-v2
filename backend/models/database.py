@@ -61,7 +61,6 @@ class Document(Base):
     relevance_score = Column(Float)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    scraped_at = Column(DateTime)
     source_updated_at = Column(DateTime)
     update_count = Column(Integer, default=0)
     embedding = Column(Vector(384))

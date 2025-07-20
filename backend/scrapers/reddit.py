@@ -284,6 +284,5 @@ class RedditScraper(BaseScraper):
             title=raw_data['title'],
             content=content,
             summary=summary[:500],  # Limit summary length
-            metadata=metadata,
-            scraped_at=datetime.now()
+            metadata=metadata
         ), source_updated_at

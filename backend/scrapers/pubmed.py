@@ -618,6 +618,5 @@ class PubMedScraper(BaseScraper):
             title=raw_data.get("title", ""),
             content=content,
             summary=summary,
-            metadata=metadata,
-            scraped_at=datetime.now()
+            metadata=metadata
         ), source_updated_at

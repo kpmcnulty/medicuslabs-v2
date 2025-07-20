@@ -266,8 +266,7 @@ class FAERSScraper(BaseScraper):
             title=title,
             content=content,
             summary=summary,
-            metadata=metadata,
-            scraped_at=datetime.now()
+            metadata=metadata
         ), source_updated_at
     
     def _decode_outcome(self, outcome_code: str) -> str:

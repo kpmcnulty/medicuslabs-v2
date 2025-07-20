@@ -225,7 +225,7 @@ const FieldSelector: React.FC<FieldSelectorProps> = ({
               sortedCategories.map(category => {
                 const fields = filteredGroups[category];
                 return (
-                <div key={category} className="field-category">
+                <div key={category} className="field-category" data-category={category}>
                   <div className="category-header">
                     <h4>{
                       category === 'publications' ? 'Publications' :

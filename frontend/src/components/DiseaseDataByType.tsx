@@ -46,6 +46,7 @@ const DiseaseDataByType: React.FC = () => {
 
     const metadata: Record<string, any> = {};
     const columnFilters: any[] = [];
+    let fullTextQuery: string | undefined;
 
     const processGroup = (group: QueryGroup): any => {
       const conditions: any[] = [];
@@ -53,6 +54,12 @@ const DiseaseDataByType: React.FC = () => {
       // Process individual conditions
       group.conditions.forEach(condition => {
         if (!condition.field || !condition.operator) return;
+
+        // Special handling for full text search
+        if (condition.field === '_fulltext' && condition.operator === '$contains' && condition.value) {
+          fullTextQuery = condition.value;
+          return;
+        }
 
         if (condition.field.startsWith('metadata.')) {
           // Metadata field
@@ -112,6 +119,7 @@ const DiseaseDataByType: React.FC = () => {
     processGroup(query);
 
     return {
+      q: fullTextQuery,
       metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       columnFilters: columnFilters.length > 0 ? columnFilters : undefined
     };
@@ -150,6 +158,10 @@ const DiseaseDataByType: React.FC = () => {
       // Add advanced query filters
       if (hasAdvancedSearch && filters.advancedQuery) {
         const advancedFilters = convertQueryToUnifiedSearch(filters.advancedQuery);
+        if (advancedFilters.q) {
+          // If there's a full text query from advanced search, use it
+          unifiedQuery.q = advancedFilters.q;
+        }
         if (advancedFilters.metadata) {
           unifiedQuery.metadata = advancedFilters.metadata;
         }

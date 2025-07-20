@@ -54,7 +54,7 @@ class DocumentBase(BaseModel):
     metadata: Dict[str, Any] = {}
 
 class DocumentCreate(DocumentBase):
-    scraped_at: datetime = Field(default_factory=datetime.now)
+    pass
 
 class DocumentUpdate(BaseModel):
     status: Optional[DocumentStatus] = None
@@ -68,7 +68,7 @@ class DocumentResponse(DocumentBase):
     relevance_score: Optional[float] = None
     created_at: datetime
     updated_at: datetime
-    scraped_at: datetime
+    source_updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -165,7 +165,7 @@ class DocumentDetail(BaseModel):
     relevance_score: Optional[float] = None
     created_at: datetime
     updated_at: datetime
-    scraped_at: datetime
+    source_updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

@@ -262,9 +262,9 @@ class BaseScraper(ABC):
                     """
                     INSERT INTO documents (
                         source_id, external_id, url, title, content, 
-                        summary, doc_metadata, scraped_at, status,
+                        summary, doc_metadata, status,
                         source_updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9)
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8)
                     RETURNING id
                     """,
                     document.source_id,
@@ -274,7 +274,6 @@ class BaseScraper(ABC):
                     document.content,
                     document.summary,
                     json.dumps(document.metadata),
-                    document.scraped_at,
                     source_updated_at or datetime.now()
                 )
                 doc_id = result['id']
