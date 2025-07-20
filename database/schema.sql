@@ -106,19 +106,27 @@ CREATE TABLE document_diseases (
 CREATE TABLE crawl_jobs (
     id SERIAL PRIMARY KEY,
     source_id INTEGER REFERENCES sources(id),
-    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
     
     -- Job metrics
     documents_found INTEGER DEFAULT 0,
-    documents_updated INTEGER DEFAULT 0,
     documents_processed INTEGER DEFAULT 0,
+    documents_created INTEGER DEFAULT 0,
+    documents_updated INTEGER DEFAULT 0,
+    documents_unchanged INTEGER DEFAULT 0,
+    documents_failed INTEGER DEFAULT 0,
     errors INTEGER DEFAULT 0,
     
     -- Error tracking
     error_message TEXT,
     error_details JSONB DEFAULT '[]',
+    retry_count INTEGER DEFAULT 0,
+    http_errors JSONB DEFAULT '{}',
+    
+    -- Performance metrics
+    performance_metrics JSONB DEFAULT '{}',
     
     -- Job configuration
     config JSONB DEFAULT '{}',
@@ -162,6 +170,15 @@ COMMENT ON COLUMN diseases.search_terms IS 'Search terms used by "search" type s
 
 COMMENT ON TABLE documents IS 'Core document storage with flexible JSONB metadata for each source type';
 COMMENT ON COLUMN documents.doc_metadata IS 'All source-specific fields: authors, pmid, phase, status, journal, etc.';
+
+-- Comments for crawl_jobs columns
+COMMENT ON COLUMN crawl_jobs.documents_updated IS 'Number of existing documents that were updated with new data';
+COMMENT ON COLUMN crawl_jobs.documents_created IS 'Number of new documents created during this job';
+COMMENT ON COLUMN crawl_jobs.documents_unchanged IS 'Number of documents checked but not updated (already up-to-date)';
+COMMENT ON COLUMN crawl_jobs.documents_failed IS 'Number of documents that failed to process';
+COMMENT ON COLUMN crawl_jobs.http_errors IS 'HTTP error counts by status code (e.g., {"403": 5, "429": 3})';
+COMMENT ON COLUMN crawl_jobs.performance_metrics IS 'Performance data: request_count, total_duration, avg_response_time, etc.';
+COMMENT ON COLUMN crawl_jobs.retry_count IS 'Total number of retry attempts made during this job';
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

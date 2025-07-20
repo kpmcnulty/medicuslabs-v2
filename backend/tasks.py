@@ -7,7 +7,7 @@ celery_app = Celery(
     "medical_data",
     broker=redis_url,
     backend=redis_url,
-    include=["tasks.scrapers"]
+    include=["tasks.scrapers", "tasks.scheduled", "tasks.web_scrapers"]
 )
 
 celery_app.conf.update(

@@ -73,7 +73,7 @@ async def list_diseases(
                 SELECT 
                     s.name as source_name,
                     COUNT(DISTINCT doc.id) as document_count,
-                    MAX(doc.scraped_at) as last_scraped
+                    MAX(doc.created_at) as last_scraped
                 FROM documents doc
                 JOIN document_diseases dd ON doc.id = dd.document_id
                 JOIN sources s ON doc.source_id = s.id
@@ -111,7 +111,7 @@ async def get_disease(disease_id: int) -> DiseaseResponse:
             SELECT 
                 s.name as source_name,
                 COUNT(DISTINCT doc.id) as document_count,
-                MAX(doc.scraped_at) as last_scraped
+                MAX(doc.created_at) as last_scraped
             FROM documents doc
             JOIN document_diseases dd ON doc.id = dd.document_id
             JOIN sources s ON doc.source_id = s.id
@@ -201,7 +201,7 @@ async def update_disease(disease_id: int, disease_update: DiseaseUpdate) -> Dise
             SELECT 
                 s.name as source_name,
                 COUNT(DISTINCT doc.id) as document_count,
-                MAX(doc.scraped_at) as last_scraped
+                MAX(doc.created_at) as last_scraped
             FROM documents doc
             JOIN document_diseases dd ON doc.id = dd.document_id
             JOIN sources s ON doc.source_id = s.id

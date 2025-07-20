@@ -22,8 +22,15 @@ class JobResponse(BaseModel):
     completed_at: Optional[datetime] = None
     documents_found: Optional[int] = None
     documents_processed: Optional[int] = None
+    documents_created: Optional[int] = None
+    documents_updated: Optional[int] = None
+    documents_unchanged: Optional[int] = None
+    documents_failed: Optional[int] = None
     errors: Optional[int] = None
     error_details: Optional[List[Dict[str, Any]]] = None
+    retry_count: Optional[int] = None
+    http_errors: Optional[Dict[str, int]] = None
+    performance_metrics: Optional[Dict[str, Any]] = None
     config: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None  # Make it optional since crawl_jobs doesn't have this column
@@ -89,6 +96,10 @@ async def list_jobs(
                 job_dict['config'] = json.loads(job_dict['config'])
             if job_dict.get('error_details') and isinstance(job_dict['error_details'], str):
                 job_dict['error_details'] = json.loads(job_dict['error_details'])
+            if job_dict.get('http_errors') and isinstance(job_dict['http_errors'], str):
+                job_dict['http_errors'] = json.loads(job_dict['http_errors'])
+            if job_dict.get('performance_metrics') and isinstance(job_dict['performance_metrics'], str):
+                job_dict['performance_metrics'] = json.loads(job_dict['performance_metrics'])
             jobs.append(JobResponse(**job_dict))
         
         return jobs
@@ -116,6 +127,10 @@ async def get_job(job_id: int) -> JobResponse:
             job_dict['config'] = json.loads(job_dict['config'])
         if job_dict.get('error_details') and isinstance(job_dict['error_details'], str):
             job_dict['error_details'] = json.loads(job_dict['error_details'])
+        if job_dict.get('http_errors') and isinstance(job_dict['http_errors'], str):
+            job_dict['http_errors'] = json.loads(job_dict['http_errors'])
+        if job_dict.get('performance_metrics') and isinstance(job_dict['performance_metrics'], str):
+            job_dict['performance_metrics'] = json.loads(job_dict['performance_metrics'])
         
         return JobResponse(**job_dict)
 
@@ -136,7 +151,7 @@ async def trigger_job(
         
         # Get disease names
         disease_rows = await conn.fetch("""
-            SELECT id, name FROM disease_conditions WHERE id = ANY($1)
+            SELECT id, name FROM diseases WHERE id = ANY($1)
         """, request.disease_ids)
         
         if len(disease_rows) != len(request.disease_ids):
@@ -184,11 +199,11 @@ async def trigger_bulk_jobs(
         if request.source_ids:
             sources = await conn.fetch("""
                 SELECT id, name FROM sources 
-                WHERE id = ANY($1) AND status = 'active'
+                WHERE id = ANY($1) AND is_active = true
             """, request.source_ids)
         else:
             sources = await conn.fetch("""
-                SELECT id, name FROM sources WHERE status = 'active'
+                SELECT id, name FROM sources WHERE is_active = true
             """)
         
         if not sources:
@@ -197,10 +212,10 @@ async def trigger_bulk_jobs(
         # Get diseases
         if request.disease_ids:
             diseases = await conn.fetch("""
-                SELECT id, name FROM disease_conditions WHERE id = ANY($1)
+                SELECT id, name FROM diseases WHERE id = ANY($1)
             """, request.disease_ids)
         else:
-            diseases = await conn.fetch("SELECT id, name FROM disease_conditions")
+            diseases = await conn.fetch("SELECT id, name FROM diseases")
         
         if not diseases:
             raise HTTPException(status_code=400, detail="No diseases found")

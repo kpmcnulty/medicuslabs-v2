@@ -81,7 +81,7 @@ const Jobs: React.FC = () => {
   const [triggerForm, setTriggerForm] = useState({
     source_id: 0,
     disease_ids: [] as number[],
-    job_type: 'full' as 'full' | 'incremental',
+    job_type: 'incremental' as 'full' | 'incremental',
     options: {}
   });
 
@@ -186,15 +186,15 @@ const Jobs: React.FC = () => {
           source_ids: [],
           disease_ids: triggerForm.disease_ids,
           job_type: triggerForm.job_type,
-          options: triggerForm.options
+          options: { ...triggerForm.options, incremental: triggerForm.job_type === 'incremental' }
         });
-        alert(`✅ Bulk job triggered successfully!\n\nGroup ID: ${result.group_id}\nJob Type: ${result.job_type}\nSources: ${result.sources.join(', ')}\nDiseases: ${result.diseases.join(', ')}`);
+        alert(`✅ Bulk job triggered successfully!\n\nGroup ID: ${result.group_id}\nJob Type: ${triggerForm.job_type}\nSources: ${result.sources.join(', ')}\nDiseases: ${result.diseases.join(', ')}`);
       } else {
         // Single source job
         const result = await adminApi.triggerJob({
           source_id: triggerForm.source_id,
           disease_ids: triggerForm.disease_ids,
-          options: triggerForm.options
+          options: { ...triggerForm.options, incremental: triggerForm.job_type === 'incremental' }
         });
         alert(`✅ Job triggered successfully!\n\nJob ID: ${result.job_id}\nSource: ${result.source}\nDiseases: ${result.diseases.join(', ')}`);
       }
@@ -203,7 +203,7 @@ const Jobs: React.FC = () => {
       setTriggerForm({
         source_id: 0,
         disease_ids: [],
-        job_type: 'full',
+        job_type: 'incremental' as 'full' | 'incremental',
         options: {}
       });
       loadJobs();
@@ -502,38 +502,42 @@ const Jobs: React.FC = () => {
               </select>
             </div>
             
-            <div className="form-group">
-              <label>Diseases</label>
-              <select
-                multiple
-                value={triggerForm.disease_ids.map(String)}
-                onChange={(e) => {
-                  const selected = Array.from(e.target.selectedOptions, option => parseInt(option.value));
-                  setTriggerForm({ ...triggerForm, disease_ids: selected });
-                }}
-                style={{ height: '200px' }}
-              >
-                {diseases.map(disease => (
-                  <option key={disease.id} value={disease.id}>
-                    {disease.name}
-                  </option>
-                ))}
-              </select>
-              <small>Hold Ctrl/Cmd to select multiple diseases. Leave empty for all diseases.</small>
-            </div>
-            
-            {triggerForm.source_id === 0 && (
+            {triggerForm.source_id !== 0 && (
               <div className="form-group">
-                <label>Job Type</label>
+                <label>Diseases</label>
                 <select
-                  value={triggerForm.job_type}
-                  onChange={(e) => setTriggerForm({ ...triggerForm, job_type: e.target.value as 'full' | 'incremental' })}
+                  multiple
+                  value={triggerForm.disease_ids.map(String)}
+                  onChange={(e) => {
+                    const selected = Array.from(e.target.selectedOptions, option => parseInt(option.value));
+                    setTriggerForm({ ...triggerForm, disease_ids: selected });
+                  }}
+                  style={{ height: '200px' }}
                 >
-                  <option value="full">Full Scrape</option>
-                  <option value="incremental">Incremental Update</option>
+                  {diseases.map(disease => (
+                    <option key={disease.id} value={disease.id}>
+                      {disease.name}
+                    </option>
+                  ))}
                 </select>
+                <small>Hold Ctrl/Cmd to select multiple diseases. Leave empty for all diseases.</small>
               </div>
             )}
+            
+            <div className="form-group">
+              <label>Scrape Type</label>
+              <select
+                value={triggerForm.job_type}
+                onChange={(e) => setTriggerForm({ ...triggerForm, job_type: e.target.value as 'full' | 'incremental' })}
+              >
+                <option value="incremental">Incremental - Only new/updated since last run</option>
+                <option value="full">Full - Get all available data (slower)</option>
+              </select>
+              <small className="text-muted">
+                Incremental is recommended for regular updates. Use full scrape for initial data collection or to refresh all data.
+              </small>
+            </div>
+            
             
             <div className="form-buttons">
               <button className="btn-primary" onClick={handleTriggerJob}>
@@ -544,7 +548,7 @@ const Jobs: React.FC = () => {
                 setTriggerForm({
                   source_id: 0,
                   disease_ids: [],
-                  job_type: 'full',
+                  job_type: 'incremental' as 'full' | 'incremental',
                   options: {}
                 });
               }}>

@@ -193,6 +193,7 @@ class AdminApi {
     return response.data;
   }
 
+
   async cancelJob(id: number) {
     const response = await this.client.post(`/api/admin/jobs/${id}/cancel`);
     return response.data;

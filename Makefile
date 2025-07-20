@@ -79,6 +79,19 @@ migrate:
 	@cat database/seeds.sql | docker-compose exec -T postgres psql -U medical_user -d medical_data || exit 1
 	@echo "Database setup complete!"
 
+# Apply all migrations without resetting database
+migrate-only:
+	@echo "Applying migrations..."
+	@for file in database/migrations/*.sql; do \
+		echo "Applying $$file..."; \
+		cat $$file | docker-compose exec -T postgres psql -U medical_user -d medical_data || true; \
+	done
+	@echo "Migrations complete!"
+
+# Full database reset and migration
+migrate-fresh: migrate migrate-only
+	@echo "Full database reset and migration complete!"
+
 
 # Shell access
 shell-api:

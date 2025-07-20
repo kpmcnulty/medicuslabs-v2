@@ -99,8 +99,15 @@ class CrawlJobUpdate(BaseModel):
     status: Optional[str] = None
     documents_found: Optional[int] = None
     documents_processed: Optional[int] = None
+    documents_created: Optional[int] = None
+    documents_updated: Optional[int] = None
+    documents_unchanged: Optional[int] = None
+    documents_failed: Optional[int] = None
     errors: Optional[int] = None
     error_details: Optional[List[Dict[str, Any]]] = None
+    retry_count: Optional[int] = None
+    http_errors: Optional[Dict[str, int]] = None
+    performance_metrics: Optional[Dict[str, Any]] = None
 
 class CrawlJobResponse(BaseModel):
     id: int

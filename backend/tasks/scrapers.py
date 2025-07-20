@@ -10,6 +10,18 @@ from scrapers.pubmed import PubMedScraper
 from scrapers.reddit import RedditScraper
 from scrapers.faers import FAERSScraper
 
+async def run_scraper_task(scraper, disease_ids: List[int], disease_names: List[str], **kwargs) -> Dict[str, Any]:
+    """Helper function to run scrapers with incremental support"""
+    # Check if this should be an incremental scrape
+    is_incremental = kwargs.pop('incremental', True)  # Default to incremental
+    
+    if is_incremental:
+        logger.info(f"Running incremental scrape for {scraper.source_name}")
+        return await scraper.scrape_incremental(disease_ids, disease_names, **kwargs)
+    else:
+        logger.info(f"Running full scrape for {scraper.source_name}")
+        return await scraper.scrape(disease_ids, disease_names, **kwargs)
+
 @celery_app.task(name="scrape_clinicaltrials")
 def scrape_clinicaltrials(**kwargs) -> Dict[str, Any]:
     """Celery task to scrape ClinicalTrials.gov"""
@@ -24,7 +36,7 @@ def scrape_clinicaltrials(**kwargs) -> Dict[str, Any]:
             # Set the job_id if provided
             if job_id:
                 scraper.job_id = job_id
-            return await scraper.scrape(disease_ids, disease_names, **kwargs)
+            return await run_scraper_task(scraper, disease_ids, disease_names, **kwargs)
     
     # Run async scraper in sync context
     loop = asyncio.new_event_loop()
@@ -50,7 +62,7 @@ def scrape_pubmed(**kwargs) -> Dict[str, Any]:
             # Set the job_id if provided
             if job_id:
                 scraper.job_id = job_id
-            return await scraper.scrape(disease_ids, disease_names, **kwargs)
+            return await run_scraper_task(scraper, disease_ids, disease_names, **kwargs)
     
     # Run async scraper in sync context
     loop = asyncio.new_event_loop()
@@ -92,7 +104,7 @@ def scrape_reddit(**kwargs) -> Dict[str, Any]:
             # Set the job_id if provided
             if job_id:
                 scraper.job_id = job_id
-            return await scraper.scrape(disease_ids, disease_names, **kwargs)
+            return await run_scraper_task(scraper, disease_ids, disease_names, **kwargs)
     
     # Run async scraper in sync context
     loop = asyncio.new_event_loop()
@@ -134,7 +146,7 @@ def scrape_faers(**kwargs) -> Dict[str, Any]:
             # Set the job_id if provided
             if job_id:
                 scraper.job_id = job_id
-            return await scraper.scrape(disease_ids, disease_names, **kwargs)
+            return await run_scraper_task(scraper, disease_ids, disease_names, **kwargs)
     
     # Run async scraper in sync context
     loop = asyncio.new_event_loop()
@@ -212,6 +224,10 @@ def scrape_all_sources(**kwargs) -> Dict[str, Any]:
         source_kwargs = kwargs.copy()
         source_kwargs['source_id'] = source['id']
         source_kwargs['source_name'] = source['name']
+        
+        # Extract options and merge into kwargs
+        options = source_kwargs.pop('options', {})
+        source_kwargs.update(options)
         
         # For web scrapers, pass config_name from source config
         if scraper_type == 'web_scraper' and source['config']:

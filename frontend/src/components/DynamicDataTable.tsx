@@ -51,6 +51,8 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
   const [showColumnSettings, setShowColumnSettings] = useState(false);
+  const [selectedRow, setSelectedRow] = useState<any>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   // Set default visibility only (let users control pinning)
   useEffect(() => {
@@ -110,7 +112,26 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
       enableSorting: col.sortable !== false,
       // Enable column filtering for server-side
       enableColumnFilter: true,
-      cell: ({ getValue }: any) => renderCellValue(getValue(), col),
+      cell: ({ getValue, row }: any) => {
+        const value = getValue();
+        
+        // Make title column a clickable link if there's a URL
+        if (col.key === 'title' && row.original.url) {
+          return (
+            <a 
+              href={row.original.url} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="title-link"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {value}
+            </a>
+          );
+        }
+        
+        return renderCellValue(value, col);
+      },
     }));
     
     return [selectColumn, ...dataColumns];
@@ -413,7 +434,10 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
             <tr 
               key={row.id}
               className="data-row"
-              onClick={() => onRowClick?.(row.original)}
+              onClick={() => {
+                setSelectedRow(row.original);
+                setShowDetailModal(true);
+              }}
             >
               {row.getVisibleCells().map(cell => {
                 const isPinned = cell.column.getIsPinned();
@@ -486,6 +510,97 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {showDetailModal && selectedRow && (
+        <div className="detail-modal-overlay" onClick={() => setShowDetailModal(false)}>
+          <div className="detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="detail-modal-header">
+              <h3>Record Details</h3>
+              <button 
+                className="close-modal-btn"
+                onClick={() => setShowDetailModal(false)}
+                aria-label="Close modal"
+              >
+                ×
+              </button>
+            </div>
+            <div className="detail-modal-content">
+              {/* Main fields */}
+              {columnConfig.filter((col: any) => !col.key.startsWith('metadata.')).map((col: any) => {
+                const keys = col.key.split('.');
+                let value: any = selectedRow;
+                for (const key of keys) {
+                  value = value?.[key];
+                }
+                
+                if (value === null || value === undefined || value === '') return null;
+                
+                return (
+                  <div key={col.key} className="detail-field">
+                    <label>{col.label}:</label>
+                    <div className="detail-value">
+                      {col.key === 'url' || (typeof value === 'string' && value.startsWith('http')) ? (
+                        <a href={value} target="_blank" rel="noopener noreferrer" className="detail-link">
+                          {value}
+                        </a>
+                      ) : (
+                        renderCellValue(value, col)
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              
+              {/* Metadata fields */}
+              {selectedRow.metadata && Object.keys(selectedRow.metadata).length > 0 && (
+                <>
+                  <div className="detail-field">
+                    <label>Additional Details:</label>
+                  </div>
+                  {Object.entries(selectedRow.metadata).map(([key, value]) => {
+                    if (value === null || value === undefined || value === '') return null;
+                    
+                    // Format the key nicely
+                    const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    
+                    return (
+                      <div key={`metadata.${key}`} className="detail-field metadata-field">
+                        <label>{formattedKey}:</label>
+                        <div className="detail-value">
+                          {typeof value === 'string' && value.startsWith('http') ? (
+                            <a href={value} target="_blank" rel="noopener noreferrer" className="detail-link">
+                              {value}
+                            </a>
+                          ) : Array.isArray(value) ? (
+                            <div className="list-value">
+                              {value.map((item: any, idx: number) => (
+                                <span key={idx} className="list-item">{String(item)}</span>
+                              ))}
+                            </div>
+                          ) : typeof value === 'object' ? (
+                            <pre className="json-value">{JSON.stringify(value, null, 2)}</pre>
+                          ) : (
+                            <span>{String(value)}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+            <div className="detail-modal-footer">
+              <button 
+                className="modal-action-btn"
+                onClick={() => setShowDetailModal(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

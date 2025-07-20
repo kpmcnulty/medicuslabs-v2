@@ -41,6 +41,19 @@ class BaseScraper(ABC):
         self.errors: List[Dict[str, Any]] = []
         self.disease_ids: List[int] = []
         
+        # Add metrics tracking
+        self.metrics = {
+            'documents_created': 0,
+            'documents_updated': 0,
+            'documents_unchanged': 0,
+            'documents_failed': 0,
+            'http_errors': {},
+            'retry_count': 0,
+            'request_count': 0,
+            'start_time': None,
+            'request_durations': []
+        }
+        
     async def __aenter__(self):
         return self
     
@@ -61,6 +74,18 @@ class BaseScraper(ABC):
     def extract_document_data(self, raw_data: Dict[str, Any]) -> Tuple[DocumentCreate, Optional[datetime]]:
         """Extract and transform raw data into DocumentCreate schema with source update timestamp"""
         pass
+    
+    async def track_http_error(self, status_code: int):
+        """Track HTTP errors by status code"""
+        str_code = str(status_code)
+        if str_code not in self.metrics['http_errors']:
+            self.metrics['http_errors'][str_code] = 0
+        self.metrics['http_errors'][str_code] += 1
+    
+    async def track_request_duration(self, duration: float):
+        """Track request duration for performance metrics"""
+        self.metrics['request_durations'].append(duration)
+        self.metrics['request_count'] += 1
     
     async def start_job(self, config: Dict[str, Any] = {}) -> int:
         """Create a new crawl job"""
@@ -215,6 +240,41 @@ class BaseScraper(ABC):
                 query_parts.append(f"error_details = ${param_count}")
                 values.append(json.dumps(update.error_details))
             
+            if update.documents_created is not None:
+                param_count += 1
+                query_parts.append(f"documents_created = ${param_count}")
+                values.append(update.documents_created)
+            
+            if update.documents_updated is not None:
+                param_count += 1
+                query_parts.append(f"documents_updated = ${param_count}")
+                values.append(update.documents_updated)
+            
+            if update.documents_unchanged is not None:
+                param_count += 1
+                query_parts.append(f"documents_unchanged = ${param_count}")
+                values.append(update.documents_unchanged)
+            
+            if update.documents_failed is not None:
+                param_count += 1
+                query_parts.append(f"documents_failed = ${param_count}")
+                values.append(update.documents_failed)
+            
+            if update.retry_count is not None:
+                param_count += 1
+                query_parts.append(f"retry_count = ${param_count}")
+                values.append(update.retry_count)
+            
+            if update.http_errors is not None:
+                param_count += 1
+                query_parts.append(f"http_errors = ${param_count}")
+                values.append(json.dumps(update.http_errors))
+            
+            if update.performance_metrics is not None:
+                param_count += 1
+                query_parts.append(f"performance_metrics = ${param_count}")
+                values.append(json.dumps(update.performance_metrics))
+            
             if query_parts:
                 query = f"""
                     UPDATE crawl_jobs 
@@ -250,10 +310,14 @@ class BaseScraper(ABC):
                         logger.debug(f"Document {document.external_id} is up to date, skipping")
                         # Update last_checked_at
                         await self._update_last_checked(existing['id'])
+                        self.metrics['documents_unchanged'] += 1  # Track unchanged
                         return existing['id']
                 
                 # Update existing document
-                return await self._update_document(existing['id'], document, source_updated_at)
+                doc_id = await self._update_document(existing['id'], document, source_updated_at)
+                if doc_id:
+                    self.metrics['documents_updated'] += 1  # Track updates
+                return doc_id
             
             
             # Insert document (skip raw file saving for now)
@@ -277,6 +341,8 @@ class BaseScraper(ABC):
                     source_updated_at or datetime.now()
                 )
                 doc_id = result['id']
+                if doc_id:
+                    self.metrics['documents_created'] += 1  # Track new documents
                 
                 # Link document to diseases
                 if self.disease_ids:
@@ -296,9 +362,11 @@ class BaseScraper(ABC):
                 
         except Exception as e:
             logger.error(f"Error saving document {document.external_id}: {e}")
+            self.metrics['documents_failed'] += 1  # Track failures
             self.errors.append({
                 "external_id": document.external_id,
                 "error": str(e),
+                "error_type": type(e).__name__,
                 "timestamp": datetime.now().isoformat()
             })
             return None
@@ -371,19 +439,56 @@ class BaseScraper(ABC):
         
         return str(file_path)
     
-    async def make_request(self, url: str, params: Optional[Dict] = None) -> Dict[str, Any]:
-        """Make rate-limited HTTP request"""
+    async def make_request(self, url: str, params: Optional[Dict] = None, retry_count: int = 0) -> Dict[str, Any]:
+        """Make rate-limited HTTP request with retry logic"""
         await self.rate_limiter.acquire()
+        
+        start_time = asyncio.get_event_loop().time()
+        max_retries = 3
         
         try:
             response = await self.client.get(url, params=params)
             response.raise_for_status()
+            
+            # Track request duration
+            duration = asyncio.get_event_loop().time() - start_time
+            await self.track_request_duration(duration)
+            
             return response.json()
+            
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            await self.track_http_error(status_code)
+            
+            # Handle rate limiting (429) and server errors (5xx) with retry
+            if status_code in [429, 500, 502, 503, 504] and retry_count < max_retries:
+                wait_time = (2 ** retry_count) * 1.0  # Exponential backoff
+                logger.warning(f"HTTP {status_code} for {url}, retrying in {wait_time}s (attempt {retry_count + 1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+                self.metrics['retry_count'] += 1
+                return await self.make_request(url, params, retry_count + 1)
+            
+            logger.error(f"HTTP error {status_code} for {url}: {e}")
+            raise
+            
         except httpx.HTTPError as e:
             logger.error(f"HTTP error for {url}: {e}")
+            self.errors.append({
+                "url": url,
+                "error": str(e),
+                "error_type": "HTTPError",
+                "timestamp": datetime.now().isoformat()
+            })
             raise
+            
         except Exception as e:
             logger.error(f"Error making request to {url}: {e}")
+            self.errors.append({
+                "url": url,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "timestamp": datetime.now().isoformat()
+            })
             raise
     
     async def scrape_incremental(self, disease_ids: List[int], disease_names: List[str], **kwargs) -> Dict[str, Any]:
@@ -483,6 +588,9 @@ class BaseScraper(ABC):
         if not self.job_id:
             await self.start_job({"disease_ids": disease_ids, "disease_names": disease_names, **kwargs})
         
+        # Set start time for metrics
+        self.metrics['start_time'] = asyncio.get_event_loop().time()
+        
         # Get all configuration levels
         source_config = await self.get_source_config()
         job_config = await self.get_job_config()
@@ -523,10 +631,20 @@ class BaseScraper(ABC):
                             await self.update_source_state(last_crawled_id=document.external_id)
                         
                         # Update job progress
-                        if total_processed % 10 == 0:
+                        if total_processed % 10 == 0 or total_processed == total_found:
+                            progress_pct = (total_processed / total_found * 100) if total_found > 0 else 0
+                            logger.info(f"Progress: {total_processed}/{total_found} ({progress_pct:.1f}%) - "
+                                        f"Created: {self.metrics['documents_created']}, "
+                                        f"Updated: {self.metrics['documents_updated']}, "
+                                        f"Unchanged: {self.metrics['documents_unchanged']}, "
+                                        f"Failed: {self.metrics['documents_failed']}")
                             await self.update_job(CrawlJobUpdate(
                                 documents_found=total_found,
-                                documents_processed=total_processed
+                                documents_processed=total_processed,
+                                documents_created=self.metrics['documents_created'],
+                                documents_updated=self.metrics['documents_updated'],
+                                documents_unchanged=self.metrics['documents_unchanged'],
+                                documents_failed=self.metrics['documents_failed']
                             ))
                             
                     except Exception as e:
@@ -572,10 +690,20 @@ class BaseScraper(ABC):
                                 await self.update_source_state(last_crawled_id=document.external_id)
                             
                             # Update job progress
-                            if total_processed % 10 == 0:
+                            if total_processed % 10 == 0 or total_processed == total_found:
+                                progress_pct = (total_processed / total_found * 100) if total_found > 0 else 0
+                                logger.info(f"Progress: {total_processed}/{total_found} ({progress_pct:.1f}%) - "
+                                            f"Created: {self.metrics['documents_created']}, "
+                                            f"Updated: {self.metrics['documents_updated']}, "
+                                            f"Unchanged: {self.metrics['documents_unchanged']}, "
+                                            f"Failed: {self.metrics['documents_failed']}")
                                 await self.update_job(CrawlJobUpdate(
                                     documents_found=total_found,
-                                    documents_processed=total_processed
+                                    documents_processed=total_processed,
+                                    documents_created=self.metrics['documents_created'],
+                                    documents_updated=self.metrics['documents_updated'],
+                                    documents_unchanged=self.metrics['documents_unchanged'],
+                                    documents_failed=self.metrics['documents_failed']
                                 ))
                                 
                         except Exception as e:
@@ -586,22 +714,53 @@ class BaseScraper(ABC):
                                 "timestamp": datetime.now().isoformat()
                             })
             
-            # Final job update
+            # Calculate performance metrics
+            if self.metrics['request_durations']:
+                avg_response_time = sum(self.metrics['request_durations']) / len(self.metrics['request_durations'])
+                total_duration = asyncio.get_event_loop().time() - self.metrics['start_time']
+            else:
+                avg_response_time = 0
+                total_duration = 0
+            
+            performance_metrics = {
+                'request_count': self.metrics['request_count'],
+                'total_duration_seconds': total_duration,
+                'avg_response_time_seconds': avg_response_time,
+                'requests_per_second': self.metrics['request_count'] / total_duration if total_duration > 0 else 0
+            }
+            
+            # Final job update with all metrics
             await self.update_job(CrawlJobUpdate(
                 status="completed",
                 documents_found=total_found,
                 documents_processed=total_processed,
+                documents_created=self.metrics['documents_created'],
+                documents_updated=self.metrics['documents_updated'],
+                documents_unchanged=self.metrics['documents_unchanged'],
+                documents_failed=self.metrics['documents_failed'],
                 errors=len(self.errors),
-                error_details=self.errors
+                error_details=self.errors,
+                retry_count=self.metrics['retry_count'],
+                http_errors=self.metrics['http_errors'],
+                performance_metrics=performance_metrics
             ))
             
-            logger.info(f"Scraping completed: {total_processed}/{total_found} documents processed")
+            logger.info(f"Scraping completed: {total_processed}/{total_found} documents processed. "
+                        f"Created: {self.metrics['documents_created']}, Updated: {self.metrics['documents_updated']}, "
+                        f"Unchanged: {self.metrics['documents_unchanged']}, Failed: {self.metrics['documents_failed']}")
             
             return {
                 "job_id": self.job_id,
                 "documents_found": total_found,
                 "documents_processed": total_processed,
-                "errors": len(self.errors)
+                "documents_created": self.metrics['documents_created'],
+                "documents_updated": self.metrics['documents_updated'],
+                "documents_unchanged": self.metrics['documents_unchanged'],
+                "documents_failed": self.metrics['documents_failed'],
+                "errors": len(self.errors),
+                "http_errors": self.metrics['http_errors'],
+                "retry_count": self.metrics['retry_count'],
+                "performance": performance_metrics
             }
             
         except Exception as e:

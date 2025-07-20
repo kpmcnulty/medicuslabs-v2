@@ -35,13 +35,13 @@ def update_all_sources() -> Dict[str, Any]:
         disease_names=[],
         options={
             'limit': None,  # No limit - get everything
-            'incremental': True,  # Only new/updated since last run
+            'incremental': True  # Only get new/updated since last run
         }
     )
     
     return {
         "started_at": datetime.now().isoformat(),
-        "message": "Update all sources task triggered - fetching ALL available data",
+        "message": "Update all sources task triggered - fetching new/updated data since last run",
         **result  # Include task_ids and other info
     }
 
