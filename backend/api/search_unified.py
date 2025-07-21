@@ -49,7 +49,7 @@ class UnifiedSearchQuery(BaseModel):
     facets: Optional[List[str]] = Field(None, description="Fields to generate facet counts for")
     
     # Pagination
-    limit: int = Field(50, le=100)
+    limit: int = Field(50, le=10000)  # Allow up to 10k for exports
     offset: int = Field(0, ge=0)
     
     # Sorting
@@ -1161,7 +1161,7 @@ async def export_unified_search(
     sources: Optional[List[str]] = None,
     source_categories: Optional[List[str]] = None,
     diseases: Optional[List[str]] = None,
-    limit: int = 100
+    limit: int = 10000  # Export all results by default
 ):
     """Export search results in various formats"""
     

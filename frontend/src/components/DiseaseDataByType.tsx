@@ -31,6 +31,7 @@ const DiseaseDataByType: React.FC = () => {
   const [hasSearched, setHasSearched] = useState(false);
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [queryBuilderValid, setQueryBuilderValid] = useState(false);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 50 });
 
   const [activeDataTypes, setActiveDataTypes] = useState<string[]>(['publications', 'trials', 'community', 'faers']);
   const [availableDataTypes] = useState([
@@ -125,6 +126,18 @@ const DiseaseDataByType: React.FC = () => {
     };
   }, []);
 
+  // Handle pagination change
+  const handlePaginationChange = useCallback((newPagination: any) => {
+    setPagination(newPagination);
+  }, []);
+
+  // Effect to re-run search when pagination changes
+  useEffect(() => {
+    if (hasSearched) {
+      searchUnified();
+    }
+  }, [pagination.pageIndex, pagination.pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Unified search using the new endpoint
   const searchUnified = useCallback(async () => {
     // Check search requirements
@@ -146,8 +159,8 @@ const DiseaseDataByType: React.FC = () => {
       const unifiedQuery: any = {
         diseases: filters.diseases.length > 0 ? filters.diseases : undefined,
         source_categories: activeDataTypes,
-        limit: 50,
-        offset: 0
+        limit: pagination.pageSize,
+        offset: pagination.pageIndex * pagination.pageSize
       };
 
       // Add basic text search
@@ -191,8 +204,10 @@ const DiseaseDataByType: React.FC = () => {
             diseaseName: dataType.name,
             data: typeResults,
             columns: searchResults.columns || [],
-            totalCount: typeResults.length,
+            totalCount: searchResults.total || typeResults.length, // Use API total count
             loading: false,
+            pagination: pagination,
+            onPaginationChange: handlePaginationChange,
             searchFilters: {
               diseases: filters.diseases,
               query: filters.query || undefined,
@@ -213,7 +228,7 @@ const DiseaseDataByType: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters, activeDataTypes, availableDataTypes, isAdvancedMode, queryBuilderValid, convertQueryToUnifiedSearch]);
+  }, [filters, activeDataTypes, availableDataTypes, isAdvancedMode, queryBuilderValid, convertQueryToUnifiedSearch, pagination, handlePaginationChange]);
 
   // Auto-search when filters change (with debounce)
   useEffect(() => {
@@ -226,14 +241,17 @@ const DiseaseDataByType: React.FC = () => {
 
   const handleDiseasesChange = useCallback((selectedDiseases: string[]) => {
     setFilters(prev => ({ ...prev, diseases: selectedDiseases }));
+    setPagination({ pageIndex: 0, pageSize: 50 }); // Reset to first page
   }, []);
 
   const handleQueryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters(prev => ({ ...prev, query: e.target.value }));
+    setPagination({ pageIndex: 0, pageSize: 50 }); // Reset to first page
   }, []);
 
   const handleAdvancedQueryChange = useCallback((query: QueryGroup) => {
     setFilters(prev => ({ ...prev, advancedQuery: query }));
+    setPagination({ pageIndex: 0, pageSize: 50 }); // Reset to first page
   }, []);
 
   const handleQueryBuilderValidChange = useCallback((isValid: boolean) => {

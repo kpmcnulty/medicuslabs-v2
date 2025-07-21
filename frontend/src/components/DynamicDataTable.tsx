@@ -475,36 +475,54 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
       {totalCount && totalCount > (pagination?.pageSize || 20) && (
         <div className="table-pagination">
           <button
-            onClick={() => table.setPageIndex(0)}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => {
+              if (onPaginationChange && pagination) {
+                onPaginationChange({ ...pagination, pageIndex: 0 });
+              }
+            }}
+            disabled={pagination?.pageIndex === 0}
           >
             {'<<'}
           </button>
           <button
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => {
+              if (onPaginationChange && pagination && pagination.pageIndex > 0) {
+                onPaginationChange({ ...pagination, pageIndex: pagination.pageIndex - 1 });
+              }
+            }}
+            disabled={pagination?.pageIndex === 0}
           >
             {'<'}
           </button>
           <span className="pagination-info">
-            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+            Page {(pagination?.pageIndex || 0) + 1} of {table.getPageCount()}
           </span>
           <button
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => {
+              if (onPaginationChange && pagination && pagination.pageIndex < table.getPageCount() - 1) {
+                onPaginationChange({ ...pagination, pageIndex: pagination.pageIndex + 1 });
+              }
+            }}
+            disabled={(pagination?.pageIndex ?? 0) >= table.getPageCount() - 1}
           >
             {'>'}
           </button>
           <button
-            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-            disabled={!table.getCanNextPage()}
+            onClick={() => {
+              if (onPaginationChange && pagination) {
+                onPaginationChange({ ...pagination, pageIndex: table.getPageCount() - 1 });
+              }
+            }}
+            disabled={(pagination?.pageIndex ?? 0) >= table.getPageCount() - 1}
           >
             {'>>'}
           </button>
           <select
-            value={table.getState().pagination.pageSize}
+            value={pagination?.pageSize || 20}
             onChange={e => {
-              table.setPageSize(Number(e.target.value));
+              if (onPaginationChange && pagination) {
+                onPaginationChange({ ...pagination, pageSize: Number(e.target.value), pageIndex: 0 });
+              }
             }}
           >
             {[10, 20, 30, 40, 50].map(pageSize => (
