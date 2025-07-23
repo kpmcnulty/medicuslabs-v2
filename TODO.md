@@ -1,32 +1,61 @@
-# Medical Data Platform TODO - Updated Status (As of 2025-07-13)
+# Medical Data Platform TODO - Updated Status (As of 2025-07-21)
 
 
 ## 🚧 Phase 1.5: Expand Data Collection & Define Strategy (CURRENT SPRINT)
 
-### 🔴 High Priority - Fix Data Collection (2/5 scrapers working)
-- [ ] **Fix Existing Broken Scrapers**
-  - [x] Reddit scraper implemented but needs API credentials in .env
-  - [ ] HealthUnlocked communities (web.py exists, config exists, NOT integrated)
-  - [ ] Patient.info forums (web.py exists, config exists, NOT integrated)
-- [ ] **Add High-Value Medical Sources**
-  - [ ] European Medicines Agency (EMA) database - NOT STARTED
-  - [ ] Medical journals with open APIs (PLOS, BMJ Open) - NOT STARTED
+### 🔴 High Priority - Fix Data Collection (4/7 scrapers working)
+- [ ] **Working Scrapers**
+  - [x] ClinicalTrials.gov - Fully functional with API v2
+  - [x] PubMed - Enhanced with full metadata extraction  
+  - [x] FDA FAERS - Adverse event reporting system
+  - [x] Reddit - Implemented but needs API credentials:
+    - `REDDIT_CLIENT_ID`
+    - `REDDIT_CLIENT_SECRET` 
+    - `REDDIT_USER_AGENT`
+- [ ] **Ready but NOT Integrated**
+  - [ ] HealthUnlocked - WebScraper class exists, config exists, needs seeds.sql entry
+  - [ ] Patient.info - WebScraper class exists, config exists, needs seeds.sql entry
+- [ ] **Not Started**
+  - [ ] European Medicines Agency (EMA) database
+  - [ ] PLOS (Public Library of Science) journals
+  - [ ] BMJ Open medical journals
+  - [ ] PubMed Central (PMC) full-text articles
+  - [ ] ClinicalKey or other medical databases
 
-### 📊 Current Data Status: ONLY 8 DOCUMENTS (Goal: 100+)
 
 
 
+
+## 🔴 IMMEDIATE ACTIONS NEEDED (To reach 100+ documents)
+
+1. **Quick Data Population**
+   - [ ] Add Reddit API credentials to .env file
+   - [ ] Add HealthUnlocked & Patient.info to seeds.sql with web_scraper type
+   - [ ] Run full scrape on all working sources
+   - [ ] Create pre-scraped JSON archives for quick seeding
+
+2. **Integration Tasks** 
+   - [ ] Connect web scrapers to main pipeline (update task_map in scrapers.py)
+   - [ ] Test HealthUnlocked scraper with existing config
+   - [ ] Test Patient.info scraper with existing config
+   - [ ] Add source entries to database for new scrapers
 
 ## 🟢 Phase 2.5: Semantic Search (NOT STARTED - pgvector ready but unused)
 
-- [ ] Implement embedding generation for all documents
+- [ ] **Infrastructure** (pgvector column exists: embedding vector(384))
   - [ ] Choose embedding model (e.g., sentence-transformers/all-MiniLM-L6-v2)
-  - [ ] Batch process existing documents
-  - [ ] Add to scraping pipeline
-- [ ] Add semantic search endpoint (/api/search/semantic)
-- [ ] Implement hybrid search (combine full-text + semantic)
-- [ ] Add relevance scoring with adjustable weights
-- [ ] Note: pgvector extension installed but not utilized
+  - [ ] Create embedding generation service
+  - [ ] Add batch embedding job to Celery
+- [ ] **Implementation**
+  - [ ] Generate embeddings for existing documents
+  - [ ] Add embedding generation to scraping pipeline
+  - [ ] Create semantic search endpoint (/api/search/semantic)
+  - [ ] Build hybrid search (combine full-text + semantic)
+  - [ ] Add similarity threshold and relevance scoring
+- [ ] **Optimization**
+  - [ ] Add IVFFlat or HNSW index for vector similarity
+  - [ ] Implement embedding caching
+  - [ ] Add query expansion with synonyms
 
 ## 🟢 Phase 3: AI-Powered Insights & NLP Analytics (Future)
 
@@ -65,7 +94,7 @@
 
 ### 🔴 Still Missing
 - [ ] Data quality monitoring metrics
-- [ ] Export capabilities
+
 
 ## 🟢 Phase 5: Performance & Polish (Future) ?
 
@@ -74,57 +103,74 @@
 - [ ] Add search analytics/telemetry
 - [ ] Export capabilities (CSV, JSON, PDF reports)
 
-## 📊 Current State Summary (Updated 2025-07-13)
+## 📊 Current State Summary (Updated 2025-07-21)
 
 ### ✅ What's Working
 - **Dynamic Search Interface** - Fully functional with source selection, disease filtering, adaptive columns
-- **Advanced API** - Metadata discovery, dynamic values, complex filtering
-- **Working Scrapers** - ClinicalTrials.gov, PubMed (Reddit needs API creds)
-- **Database** - PostgreSQL with full-text search, JSON metadata, pgvector ready
-- **Docker Deployment** - All services running with docker-compose
+- **Advanced API** - Metadata discovery, dynamic values, complex filtering  
+- **Working Scrapers** - ClinicalTrials.gov, PubMed, FDA FAERS, Reddit (needs API creds)
+- **Database** - PostgreSQL with full-text search, JSON metadata, pgvector ready (embedding vector(384))
+- **Docker Deployment** - All services running with docker-compose + Celery/Redis/Flower
 - **Admin Portal** - Complete source/disease management, job monitoring, JWT auth
+- **Infrastructure Ready** - WebScraper class with Playwright, configs for forums exist
 
 ### 🔴 Critical Gaps
-1. **Data Collection** - Only 2/5 scrapers working, ONLY 8 DOCUMENTS (need 100+)
-2. **Forum Scrapers** - HealthUnlocked & Patient.info configs exist but NOT integrated
-3. **FDA FAERS** - High-value adverse event data Done
-4. **Smart Query Builder** - Partially implemented, needs integration
-5. **Data Normalization** - No pipeline defined
+1. **Data Volume** - ONLY 8 DOCUMENTS in database (need 100+)
+2. **Scraper Integration** - HealthUnlocked & Patient.info ready but not connected
+3. **Journal Sources** - No medical journal scrapers (PLOS, BMJ, PMC)
+4. **Semantic Search** - pgvector installed but completely unused
+5. **Data Normalization** - No standardization pipeline for inconsistent formats
+6. **Pre-scraped Archives** - No seed data for quick population
 
 ### 🟡 Implementation Status by Phase
 - **Phase 1** ✅ Core Search - COMPLETE
-- **Phase 1.5** 🚧 Data Collection - IN PROGRESS 
-- **Phase 2** Query Builder -  DONE
-- **Phase 2.5** ❌ Semantic Search - NOT STARTED (pgvector unused)
+- **Phase 1.5** 🚧 Data Collection - IN PROGRESS (4/7+ scrapers working)
+- **Phase 2** ✅ Query Builder - COMPLETE 
+- **Phase 2.5** ❌ Semantic Search - NOT STARTED (pgvector ready but unused)
 - **Phase 3** ❌ NLP/AI - NOT STARTED
 - **Phase 4** ✅ Admin Portal - COMPLETE 
 - **Phase 5** ❌ Performance - NOT STARTED
 
-### 🎯 Next Sprint Goals
-1. Fix Reddit, HealthUnlocked, Patient.info scrapers
-2. Add FDA FAERS scraper for adverse events
-3. Implement visual query builder with dynamic schema
-4. Expand to 100+ documents across all sources
-5. Define data normalization pipeline
+### 🎯 Next Sprint Goals (Priority Order)
+2. **Day 1** - Integrate HealthUnlocked & Patient.info (add to seeds.sql)
+3. **Day 2** - Create pre-scraped data archives for seeding
+4. **Day 3** - Add journal scrapers (PLOS, BMJ Open, PMC)
+5. **Day 4** - Implement basic semantic search with embeddings
+6. **Day 5** - Run full scrapes to reach 100+ documents
 
-### 🔴 User Experience Improvements - High Priority
-  1. add bakc 'detail view' with expanded stuff'
 ## Technical Architecture Notes
 
 ### Database Schema
-- Documents table with JSONB metadata column
-- Full-text search indexes on title/content
-- pgvector extension ready for semantic search
-- Partitioned document_diseases for scalability
+- Documents table with JSONB metadata column for flexible source-specific data
+- Full-text search indexes (GIN with trigrams) on title/content  
+- pgvector extension installed with embedding vector(384) column ready
+- Proper constraints to prevent duplicate documents (source_id + external_id)
+- Crawl state tracking for incremental updates
+
+### Scraper Architecture  
+- BaseScraper class with rate limiting, incremental updates, job tracking
+- WebScraper with Playwright support for JavaScript-heavy sites
+- Config-driven scrapers using YAML files
+- Task integration via Celery for async processing
+- Unified document extraction and transformation
 
 ### API Design
-- FastAPI with async SQLAlchemy
-- Dynamic schema discovery from database
-- Efficient JSON querying with PostgreSQL operators
-- RESTful endpoints with proper error handling
+- FastAPI with async SQLAlchemy and connection pooling
+- Dynamic schema discovery from database metadata
+- Efficient JSONB querying with PostgreSQL operators
+- Unified search endpoint handling all sources
+- JWT authentication for admin endpoints
 
 ### Frontend Architecture
-- React 18 with TypeScript
-- TanStack Table for high-performance data grids
-- Component-based architecture with reusable UI elements
+- React 19 with TypeScript and modern hooks
+- TanStack Table v8 for virtualized data grids
+- Dynamic component rendering based on DB config
 - Real-time search with debounced API calls
+- Admin portal with full CRUD operations
+
+### Scalability Considerations
+- Celery + Redis for distributed task processing
+- Rate limiting per source to respect API limits
+- Incremental scraping to minimize redundant requests
+- Database indexes optimized for search patterns
+- Docker Compose for easy horizontal scaling

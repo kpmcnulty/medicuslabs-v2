@@ -32,6 +32,10 @@ const DiseaseDataByType: React.FC = () => {
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [queryBuilderValid, setQueryBuilderValid] = useState(false);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 50 });
+  const [sorting, setSorting] = useState<any[]>([]);
+  const [lastSearchQuery, setLastSearchQuery] = useState<any>(null);
+  const [isPaginating, setIsPaginating] = useState(false);
+  const [skipPaginationEffect, setSkipPaginationEffect] = useState(false);
 
   const [activeDataTypes, setActiveDataTypes] = useState<string[]>(['publications', 'trials', 'community', 'faers']);
   const [availableDataTypes] = useState([
@@ -131,60 +135,94 @@ const DiseaseDataByType: React.FC = () => {
     setPagination(newPagination);
   }, []);
 
-  // Effect to re-run search when pagination changes
-  useEffect(() => {
-    if (hasSearched) {
-      searchUnified();
-    }
-  }, [pagination.pageIndex, pagination.pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Handle sorting change
+  const handleSortingChange = useCallback((newSorting: any) => {
+    setSkipPaginationEffect(true); // Prevent double search
+    setSorting(newSorting);
+    setPagination({ pageIndex: 0, pageSize: pagination.pageSize }); // Reset to first page when sorting changes
+  }, [pagination.pageSize]);
 
-  // Unified search using the new endpoint
-  const searchUnified = useCallback(async () => {
-    // Check search requirements
+  // Build the search query (expensive operation)
+  const buildSearchQuery = useCallback(() => {
     const hasBasicSearch = filters.query.trim().length > 0;
     const hasAdvancedSearch = isAdvancedMode && queryBuilderValid && filters.advancedQuery;
     const hasDiseases = filters.diseases.length > 0;
 
     if (!hasBasicSearch && !hasAdvancedSearch && !hasDiseases) {
+      return null;
+    }
+
+    const unifiedQuery: any = {
+      diseases: filters.diseases.length > 0 ? filters.diseases : undefined,
+      source_categories: activeDataTypes,
+    };
+
+    // Add basic text search
+    if (hasBasicSearch) {
+      unifiedQuery.q = filters.query;
+    }
+
+    // Add advanced query filters
+    if (hasAdvancedSearch && filters.advancedQuery) {
+      const advancedFilters = convertQueryToUnifiedSearch(filters.advancedQuery);
+      if (advancedFilters.q) {
+        unifiedQuery.q = advancedFilters.q;
+      }
+      if (advancedFilters.metadata) {
+        unifiedQuery.metadata = advancedFilters.metadata;
+      }
+      if (advancedFilters.columnFilters) {
+        unifiedQuery.columnFilters = advancedFilters.columnFilters;
+      }
+    }
+
+    return unifiedQuery;
+  }, [filters, activeDataTypes, isAdvancedMode, queryBuilderValid, convertQueryToUnifiedSearch]);
+
+  // Execute search with the given query and pagination/sorting
+  const executeSearch = useCallback(async (baseQuery: any, isPaginationOnly = false) => {
+    if (!baseQuery) {
       setDiseasesData([]);
       setHasSearched(false);
       return;
     }
 
-    setLoading(true);
+    // Show different loading state for pagination
+    if (isPaginationOnly) {
+      setIsPaginating(true);
+    } else {
+      setLoading(true);
+    }
     setHasSearched(true);
 
     try {
-      // Build unified search query
-      const unifiedQuery: any = {
-        diseases: filters.diseases.length > 0 ? filters.diseases : undefined,
-        source_categories: activeDataTypes,
+      // Add pagination and sorting to the base query
+      const queryWithPagination = {
+        ...baseQuery,
         limit: pagination.pageSize,
         offset: pagination.pageIndex * pagination.pageSize
       };
 
-      // Add basic text search
-      if (hasBasicSearch) {
-        unifiedQuery.q = filters.query;
+      // Add sorting parameters
+      if (sorting.length > 0) {
+        const sortField = sorting[0].id;
+        const sortOrder = sorting[0].desc ? 'desc' : 'asc';
+        
+        const sortFieldMapping: Record<string, string> = {
+          'created_at': 'date',
+          'source': 'source',
+          'title': 'title',
+          'created_date': 'created_date',
+          'updated_at': 'updated_at',
+          'source_updated_at': 'source_updated_at'
+        };
+        
+        queryWithPagination.sort_by = sortFieldMapping[sortField] || sortField;
+        queryWithPagination.sort_order = sortOrder;
       }
 
-      // Add advanced query filters
-      if (hasAdvancedSearch && filters.advancedQuery) {
-        const advancedFilters = convertQueryToUnifiedSearch(filters.advancedQuery);
-        if (advancedFilters.q) {
-          // If there's a full text query from advanced search, use it
-          unifiedQuery.q = advancedFilters.q;
-        }
-        if (advancedFilters.metadata) {
-          unifiedQuery.metadata = advancedFilters.metadata;
-        }
-        if (advancedFilters.columnFilters) {
-          unifiedQuery.columnFilters = advancedFilters.columnFilters;
-        }
-      }
-
-      // Execute unified search
-      const response = await api.post('/api/search/unified', unifiedQuery);
+      // Execute search
+      const response = await api.post('/api/search/unified', queryWithPagination);
       const searchResults = response.data;
 
       if (searchResults.results && searchResults.results.length > 0) {
@@ -204,17 +242,19 @@ const DiseaseDataByType: React.FC = () => {
             diseaseName: dataType.name,
             data: typeResults,
             columns: searchResults.columns || [],
-            totalCount: searchResults.total || typeResults.length, // Use API total count
-            loading: false,
+            totalCount: searchResults.total || typeResults.length,
+            loading: isPaginationOnly,
             pagination: pagination,
             onPaginationChange: handlePaginationChange,
+            sorting: sorting,
+            onSortingChange: handleSortingChange,
             searchFilters: {
               diseases: filters.diseases,
               query: filters.query || undefined,
-              metadata: unifiedQuery.metadata,
-              columnFilters: unifiedQuery.columnFilters
+              metadata: baseQuery.metadata,
+              columnFilters: baseQuery.columnFilters
             },
-            endpoint: '/api/search/unified', // Use unified endpoint for all
+            endpoint: '/api/search/unified',
           };
         }).filter(Boolean);
 
@@ -227,8 +267,49 @@ const DiseaseDataByType: React.FC = () => {
       setDiseasesData([]);
     } finally {
       setLoading(false);
+      setIsPaginating(false);
     }
-  }, [filters, activeDataTypes, availableDataTypes, isAdvancedMode, queryBuilderValid, convertQueryToUnifiedSearch, pagination, handlePaginationChange]);
+  }, [pagination, sorting, activeDataTypes, availableDataTypes, filters, handlePaginationChange, handleSortingChange]);
+
+  // Effect for pagination changes only
+  useEffect(() => {
+    if (skipPaginationEffect) {
+      // Skip this effect when sorting changes (to prevent double search)
+      setSkipPaginationEffect(false);
+      return;
+    }
+    
+    if (hasSearched && lastSearchQuery) {
+      // Just pagination changed, use cached query
+      executeSearch(lastSearchQuery, true);
+    }
+  }, [pagination.pageIndex, pagination.pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Effect for sorting changes
+  useEffect(() => {
+    if (hasSearched && lastSearchQuery) {
+      // Sorting changed, needs full re-query but use cached base query
+      executeSearch(lastSearchQuery, false);
+    }
+  }, [sorting]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Unified search using the new endpoint
+  const searchUnified = useCallback(async () => {
+    const baseQuery = buildSearchQuery();
+    
+    if (!baseQuery) {
+      setDiseasesData([]);
+      setHasSearched(false);
+      setLastSearchQuery(null);
+      return;
+    }
+
+    // Cache the query for pagination
+    setLastSearchQuery(baseQuery);
+    
+    // Execute the search
+    await executeSearch(baseQuery, false);
+  }, [buildSearchQuery, executeSearch]);
 
   // Auto-search when filters change (with debounce)
   useEffect(() => {
@@ -456,14 +537,14 @@ const DiseaseDataByType: React.FC = () => {
         )}
       </div>
 
-      {loading && (
+      {(loading || isPaginating) && (
         <div className="loading-state">
           <div className="loading-spinner"></div>
-          <p>Searching across all data sources...</p>
+          <p>{isPaginating ? 'Loading page...' : 'Searching across all data sources...'}</p>
         </div>
       )}
 
-      {!loading && hasSearched && diseasesData.length === 0 && (
+      {!loading && !isPaginating && hasSearched && diseasesData.length === 0 && (
         <div className="empty-state">
           <div className="empty-icon">📊</div>
           <h3>No Results Found</h3>

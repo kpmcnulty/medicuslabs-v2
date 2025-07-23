@@ -194,7 +194,7 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
     );
   }
 
-  if (data.length === 0 && !loading) {
+  if (data.length === 0) {
     return (
       <div className="table-empty">
         <p>No results found</p>
@@ -264,17 +264,6 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
           )}
         </div>
         <div className="toolbar-right">
-          {columnFilters && columnFilters.length > 0 && (
-            <div className="active-filters-info">
-              <span className="filter-badge">{columnFilters.length} filter{columnFilters.length > 1 ? 's' : ''} active</span>
-              <button
-                className="clear-filters-btn"
-                onClick={() => onColumnFiltersChange?.([])}
-              >
-                Clear All
-              </button>
-            </div>
-          )}
           <button
             className="column-settings-btn"
             onClick={() => setShowColumnSettings(!showColumnSettings)}
@@ -387,33 +376,36 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
                       }}
                       className={`
                         ${header.column.getCanSort() ? 'sortable' : ''}
-                        ${header.column.getFilterValue() ? 'has-filter' : ''}
+                        ${header.column.getIsSorted() ? 'sorted' : ''}
                       `}
                     >
-                  <div className="header-content">
-                    <span 
-                      className="header-label"
-                      onClick={header.column.getToggleSortingHandler()}
-                    >
+                  <div 
+                    className="header-content"
+                    onClick={header.column.getToggleSortingHandler()}
+                    style={{ cursor: header.column.getCanSort() ? 'pointer' : 'default' }}
+                  >
+                    <span className="header-label">
                       {flexRender(
                         header.column.columnDef.header,
                         header.getContext()
                       )}
-                      {header.column.getIsSorted() && (
-                        <span className="sort-indicator">
-                          {header.column.getIsSorted() === 'asc' ? ' ↑' : ' ↓'}
-                        </span>
-                      )}
                     </span>
-                    {header.column.getCanFilter() && header.column.id !== 'select' && (
-                      <input
-                        type="text"
-                        value={(header.column.getFilterValue() ?? '') as string}
-                        onChange={e => header.column.setFilterValue(e.target.value)}
-                        onClick={e => e.stopPropagation()}
-                        placeholder="Filter..."
-                        className="column-filter-input"
-                      />
+                    {header.column.getCanSort() && (
+                      <span className="sort-indicator">
+                        {header.column.getIsSorted() === 'asc' ? (
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                            <path d="M6 3L2 8h8L6 3z"/>
+                          </svg>
+                        ) : header.column.getIsSorted() === 'desc' ? (
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                            <path d="M6 9L10 4H2L6 9z"/>
+                          </svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{ opacity: 0.3 }}>
+                            <path d="M6 2L3 5h6L6 2zM6 10l3-3H3l3 3z"/>
+                          </svg>
+                        )}
+                      </span>
                     )}
                   </div>
                   {header.column.getCanResize() && (
@@ -624,6 +616,7 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
           </div>
         </div>
       )}
+
     </div>
   );
 });

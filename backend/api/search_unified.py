@@ -5,6 +5,7 @@ import asyncpg
 from pydantic import BaseModel, Field
 import json
 import time
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from dateutil import parser as date_parser
 
@@ -12,16 +13,29 @@ from core.database import get_db, get_pg_connection
 from core.config import settings
 from models.schemas import SourceType
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/search", tags=["search"])
 
 def parse_date_value(value: Any) -> Any:
     """Parse date string to datetime object for PostgreSQL"""
     if isinstance(value, str):
+        # Handle empty strings
+        if not value or value.strip() == '':
+            return None
         try:
             # Try to parse as date/datetime
-            return date_parser.parse(value)
+            if "T" in value:
+                # Full datetime string
+                return datetime.fromisoformat(value.replace('Z', '+00:00'))
+            else:
+                # Date only string - parse with dateutil for flexibility
+                parsed = date_parser.parse(value)
+                # Return as datetime for PostgreSQL compatibility
+                return datetime.combine(parsed.date(), datetime.min.time())
         except:
             # If parsing fails, return original value
+            logger.warning(f"Failed to parse date value: {value}")
             return value
     return value
 
@@ -136,13 +150,43 @@ def build_metadata_conditions(metadata_filters: Dict[str, Any], param_count: int
             # Handle operators
             for op, op_value in value.items():
                 if op == "$eq":
-                    conditions.append(f"{base_path} = ${param_count}")
-                    params.append(json.dumps(op_value) if not isinstance(op_value, (str, int, float, bool)) else op_value)
+                    # Handle date strings for equality
+                    if isinstance(op_value, str) and op_value.strip():
+                        try:
+                            if "T" in op_value:
+                                parsed_date = datetime.fromisoformat(op_value.replace('Z', '+00:00'))
+                                conditions.append(f"({base_path})::timestamp = ${param_count}::timestamp")
+                                params.append(parsed_date)
+                            else:
+                                parsed_date = datetime.strptime(op_value, "%Y-%m-%d")
+                                conditions.append(f"({base_path})::date = ${param_count}::date")
+                                params.append(parsed_date)
+                        except ValueError:
+                            conditions.append(f"{base_path} = ${param_count}")
+                            params.append(op_value)
+                    else:
+                        conditions.append(f"{base_path} = ${param_count}")
+                        params.append(json.dumps(op_value) if not isinstance(op_value, (str, int, float, bool)) else op_value)
                     param_count += 1
                     
                 elif op == "$ne":
-                    conditions.append(f"{base_path} != ${param_count}")
-                    params.append(json.dumps(op_value) if not isinstance(op_value, (str, int, float, bool)) else op_value)
+                    # Handle date strings for not equal
+                    if isinstance(op_value, str) and op_value.strip():
+                        try:
+                            if "T" in op_value:
+                                parsed_date = datetime.fromisoformat(op_value.replace('Z', '+00:00'))
+                                conditions.append(f"({base_path})::timestamp != ${param_count}::timestamp")
+                                params.append(parsed_date)
+                            else:
+                                parsed_date = datetime.strptime(op_value, "%Y-%m-%d")
+                                conditions.append(f"({base_path})::date != ${param_count}::date")
+                                params.append(parsed_date)
+                        except ValueError:
+                            conditions.append(f"{base_path} != ${param_count}")
+                            params.append(op_value)
+                    else:
+                        conditions.append(f"{base_path} != ${param_count}")
+                        params.append(json.dumps(op_value) if not isinstance(op_value, (str, int, float, bool)) else op_value)
                     param_count += 1
                     
                 elif op == "$in":
@@ -176,11 +220,29 @@ def build_metadata_conditions(metadata_filters: Dict[str, Any], param_count: int
                 elif op in ["$gt", "$gte", "$lt", "$lte"]:
                     sql_op = {"$gt": ">", "$gte": ">=", "$lt": "<", "$lte": "<="}[op]
                     # Handle date strings
-                    if isinstance(op_value, str) and "T" in op_value:
-                        conditions.append(f"({base_path})::timestamp {sql_op} ${param_count}::timestamp")
+                    if isinstance(op_value, str) and op_value.strip():
+                        try:
+                            # Try to parse as datetime or date
+                            if "T" in op_value:
+                                # Full datetime string
+                                parsed_date = datetime.fromisoformat(op_value.replace('Z', '+00:00'))
+                                conditions.append(f"({base_path})::timestamp {sql_op} ${param_count}::timestamp")
+                            else:
+                                # Date only string
+                                parsed_date = datetime.strptime(op_value, "%Y-%m-%d")
+                                conditions.append(f"({base_path})::date {sql_op} ${param_count}::date")
+                            params.append(parsed_date)
+                        except ValueError:
+                            # Not a date, treat as numeric
+                            conditions.append(f"({base_path})::numeric {sql_op} ${param_count}::numeric")
+                            params.append(op_value)
                     else:
+                        # Empty string or non-string value
+                        if isinstance(op_value, str):
+                            # Skip empty string comparisons
+                            continue
                         conditions.append(f"({base_path})::numeric {sql_op} ${param_count}::numeric")
-                    params.append(op_value)
+                        params.append(op_value)
                     param_count += 1
                     
                 elif op == "$regex":
@@ -190,8 +252,25 @@ def build_metadata_conditions(metadata_filters: Dict[str, Any], param_count: int
                     
         else:
             # Simple equality
-            conditions.append(f"{base_path} = ${param_count}")
-            params.append(json.dumps(value) if not isinstance(value, (str, int, float, bool)) else value)
+            if isinstance(value, str) and value.strip():
+                try:
+                    if "T" in value:
+                        parsed_date = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                        conditions.append(f"({base_path})::timestamp = ${param_count}::timestamp")
+                        params.append(parsed_date)
+                    else:
+                        parsed_date = datetime.strptime(value, "%Y-%m-%d")
+                        conditions.append(f"({base_path})::date = ${param_count}::date")
+                        params.append(parsed_date)
+                except ValueError:
+                    conditions.append(f"{base_path} = ${param_count}")
+                    params.append(value)
+            else:
+                # Skip empty strings
+                if isinstance(value, str) and not value.strip():
+                    continue
+                conditions.append(f"{base_path} = ${param_count}")
+                params.append(json.dumps(value) if not isinstance(value, (str, int, float, bool)) else value)
             param_count += 1
     
     return " AND ".join(conditions), params, param_count
@@ -339,7 +418,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                         elif operator == 'equals':
                             column_conditions.append(f"{column_ref} = ${param_count}")
                             # Convert date strings for date columns
-                            if column_id == 'created_at':
+                            if column_id in ['created_at', 'created_date', 'updated_at', 'source_updated_at']:
                                 params.append(parse_date_value(value))
                             else:
                                 params.append(str(value))
@@ -347,7 +426,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                         elif operator == 'notEqual':
                             column_conditions.append(f"{column_ref} != ${param_count}")
                             # Convert date strings for date columns
-                            if column_id == 'created_at':
+                            if column_id in ['created_at', 'created_date', 'updated_at', 'source_updated_at']:
                                 params.append(parse_date_value(value))
                             else:
                                 params.append(str(value))
@@ -412,7 +491,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                                 else:
                                     column_conditions.append(f"{column_ref} BETWEEN ${param_count} AND ${param_count + 1}")
                                 # Convert date strings for date columns
-                                if column_id == 'created_at':
+                                if column_id in ['created_at', 'created_date', 'updated_at', 'source_updated_at']:
                                     params.extend([parse_date_value(value[0]), parse_date_value(value[1])])
                                 else:
                                     params.extend([value[0], value[1]])
@@ -762,6 +841,12 @@ async def unified_search(search_query: UnifiedSearchQuery):
     async with get_pg_connection() as conn:
         # Build and execute main search query
         sql, params = await build_search_query(search_query)
+        
+        # Debug logging
+        logger.info(f"SQL Query: {sql[:200]}...")
+        logger.info(f"Parameters: {params}")
+        logger.info(f"Parameter types: {[type(p).__name__ for p in params]}")
+        
         results = await conn.fetch(sql, *params)
         
         # Get total count (remove pagination)

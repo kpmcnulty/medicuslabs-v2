@@ -158,6 +158,24 @@ CREATE INDEX idx_sources_disease_id ON source_diseases (disease_id);
 CREATE INDEX idx_crawl_jobs_source_id ON crawl_jobs (source_id);
 CREATE INDEX idx_crawl_jobs_status ON crawl_jobs (status);
 
+-- Sorting optimization indexes
+CREATE INDEX idx_documents_created_at ON documents (created_at DESC);
+CREATE INDEX idx_documents_updated_at ON documents (updated_at DESC);
+CREATE INDEX idx_documents_title ON documents (title);
+CREATE INDEX idx_documents_source_created ON documents (source_id, created_at DESC);
+
+-- Composite index for common query patterns
+CREATE INDEX idx_documents_source_category_created ON documents (source_id, created_at DESC) 
+  INCLUDE (title, url, summary);
+
+-- Indexes for JSONB sorting (common metadata fields)
+CREATE INDEX idx_documents_posted_date ON documents ((doc_metadata->>'posted_date')) 
+  WHERE doc_metadata->>'posted_date' IS NOT NULL;
+CREATE INDEX idx_documents_publication_date ON documents ((doc_metadata->>'publication_date')) 
+  WHERE doc_metadata->>'publication_date' IS NOT NULL;
+CREATE INDEX idx_documents_start_date ON documents ((doc_metadata->>'start_date')) 
+  WHERE doc_metadata->>'start_date' IS NOT NULL;
+
 -- Comments for clarity
 COMMENT ON TABLE sources IS 'Defines data sources - both APIs (PubMed, ClinicalTrials) and specific communities (subreddits)';
 COMMENT ON COLUMN sources.association_method IS 'How documents are linked to diseases: "search" = by search terms, "linked" = pre-linked to specific diseases';
