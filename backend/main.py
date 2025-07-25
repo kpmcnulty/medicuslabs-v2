@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from api import scrapers, metadata, search_unified, search_by_type
 from api.admin import auth as admin_auth
@@ -8,8 +9,17 @@ from api.admin import sources as admin_sources
 from api.admin import diseases as admin_diseases
 from api.admin import jobs as admin_jobs
 from api.admin import schedules as admin_schedules
+from core.cache import cache_client
 
-app = FastAPI(title="Medical Data API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await cache_client.connect()
+    yield
+    # Shutdown
+    await cache_client.disconnect()
+
+app = FastAPI(title="Medical Data API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

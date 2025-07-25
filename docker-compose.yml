@@ -11,8 +11,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
       - ./database/seeds.sql:/docker-entrypoint-initdb.d/02-seeds.sql
+      - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
     ports:
       - "5432:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-medical_user} -d medical_data"]
       interval: 10s
@@ -26,9 +28,10 @@ services:
   redis:
     image: redis:alpine
     container_name: medical_data_redis
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_pass}
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD:-redis_pass}
     volumes:
       - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
     ports:
       - "6379:6379"
     healthcheck:
@@ -36,6 +39,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 4G
 
   api:
     build: 

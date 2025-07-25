@@ -11,6 +11,7 @@ from dateutil import parser as date_parser
 
 from core.database import get_db, get_pg_connection
 from core.config import settings
+from core.cache import cache_client, get_cache, CacheClient
 from models.schemas import SourceType
 
 logger = logging.getLogger(__name__)
@@ -573,12 +574,25 @@ async def generate_facets(
     conn: asyncpg.Connection,
     search_query: UnifiedSearchQuery,
     base_conditions: str,
-    base_params: list
+    base_params: list,
+    cache: Optional[CacheClient] = None
 ) -> List[SearchFacets]:
     """Generate facet counts for requested fields"""
     
     if not search_query.facets:
         return []
+    
+    # Try cache first
+    if cache:
+        cached_facets = await cache.get_facets(
+            filters={
+                "base_conditions": base_conditions,
+                "facet_fields": search_query.facets
+            }
+        )
+        if cached_facets:
+            logger.info("Returning cached facets")
+            return [SearchFacets(**f) for f in cached_facets]
     
     facets = []
     
@@ -666,6 +680,16 @@ async def generate_facets(
                 ],
                 total_unique=len(facet_results)
             ))
+    
+    # Cache the facets
+    if cache and facets:
+        await cache.set_facets(
+            filters={
+                "base_conditions": base_conditions,
+                "facet_fields": search_query.facets
+            },
+            facets=[f.dict() for f in facets]
+        )
     
     return facets
 
@@ -812,7 +836,10 @@ def generate_columns_for_results(results: List[UnifiedSearchResult], requested_c
 
 
 @router.post("/unified", response_model=UnifiedSearchResponse)
-async def unified_search(search_query: UnifiedSearchQuery):
+async def unified_search(
+    search_query: UnifiedSearchQuery,
+    cache: CacheClient = Depends(get_cache)
+):
     """
     Unified search endpoint with full JSONB metadata support.
     
@@ -837,6 +864,26 @@ async def unified_search(search_query: UnifiedSearchQuery):
     ```
     """
     start_time = time.time()
+    
+    # Try to get cached results first
+    cache_key = None
+    if cache:
+        cached_result = await cache.get_search_results(
+            query=search_query.q or "",
+            filters={
+                "sources": search_query.sources,
+                "source_categories": search_query.source_categories,
+                "diseases": search_query.diseases,
+                "metadata": search_query.metadata,
+                "columnFilters": search_query.columnFilters
+            },
+            page=search_query.offset // search_query.limit,
+            limit=search_query.limit
+        )
+        
+        if cached_result:
+            logger.info("Returning cached search results")
+            return UnifiedSearchResponse(**cached_result)
     
     async with get_pg_connection() as conn:
         # Build and execute main search query
@@ -871,7 +918,7 @@ async def unified_search(search_query: UnifiedSearchQuery):
                 base_conditions += f" AND s.category = ANY(${params.index(search_query.source_categories) + 1})"
             # Add other conditions...
             
-            facets = await generate_facets(conn, search_query, base_conditions, count_params)
+            facets = await generate_facets(conn, search_query, base_conditions, count_params, cache)
         
         # Process results
         search_results = []
@@ -956,7 +1003,7 @@ async def unified_search(search_query: UnifiedSearchQuery):
         # Generate columns based on results and requested categories
         columns = generate_columns_for_results(search_results, search_query.source_categories)
         
-        return UnifiedSearchResponse(
+        response = UnifiedSearchResponse(
             results=search_results,
             total=total_count or 0,
             limit=search_query.limit,
@@ -966,6 +1013,24 @@ async def unified_search(search_query: UnifiedSearchQuery):
             facets=facets,
             columns=columns
         )
+        
+        # Cache the results
+        if cache:
+            await cache.set_search_results(
+                query=search_query.q or "",
+                filters={
+                    "sources": search_query.sources,
+                    "source_categories": search_query.source_categories,
+                    "diseases": search_query.diseases,
+                    "metadata": search_query.metadata,
+                    "columnFilters": search_query.columnFilters
+                },
+                page=search_query.offset // search_query.limit,
+                limit=search_query.limit,
+                results=response.dict()
+            )
+        
+        return response
 
 
 @router.get("/unified/suggest")

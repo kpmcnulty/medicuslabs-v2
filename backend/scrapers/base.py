@@ -11,6 +11,7 @@ import hashlib
 
 from core.config import settings
 from core.database import get_pg_connection
+from core.cache import cache_client
 from models.schemas import DocumentCreate, CrawlJobUpdate
 
 class RateLimiter:
@@ -358,6 +359,13 @@ class BaseScraper(ABC):
                         )
                 
                 logger.info(f"Saved document {document.external_id} with ID {doc_id}")
+                
+                # Invalidate search cache after new document
+                try:
+                    await cache_client.invalidate_search_cache()
+                except Exception as e:
+                    logger.warning(f"Failed to invalidate cache: {e}")
+                
                 return doc_id
                 
         except Exception as e:
@@ -409,6 +417,13 @@ class BaseScraper(ABC):
                         )
                 
                 logger.info(f"Updated document {document.external_id} (ID: {doc_id})")
+                
+                # Invalidate search cache after update
+                try:
+                    await cache_client.invalidate_search_cache()
+                except Exception as e:
+                    logger.warning(f"Failed to invalidate cache: {e}")
+                
                 return doc_id
         except Exception as e:
             logger.error(f"Error updating document {document.external_id}: {e}")
