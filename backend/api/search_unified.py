@@ -476,3 +476,78 @@ async def get_filters(category: Optional[str] = None):
         ]
 
         return filters
+
+
+@router.get("/unified/suggest")
+async def get_field_suggestions(source_category: Optional[str] = None, source: Optional[str] = None):
+    """Return field metadata for the QueryBuilder"""
+    
+    base_fields = [
+        {"name": "title", "label": "Title", "type": "string", "category": "core", "operators": ["contains", "equals", "not_equals"]},
+        {"name": "source", "label": "Source", "type": "string", "category": "core", "operators": ["equals", "not_equals", "in"],
+         "sample_values": []},
+        {"name": "source_category", "label": "Category", "type": "string", "category": "core", "operators": ["equals", "not_equals", "in"],
+         "sample_values": [{"value": "publications"}, {"value": "trials"}, {"value": "community"}, {"value": "safety"}]},
+        {"name": "created_date", "label": "Date", "type": "date", "category": "core", "operators": ["equals", "greater_than", "less_than", "between"]},
+        {"name": "diseases", "label": "Diseases", "type": "array", "category": "core", "operators": ["contains", "equals"]},
+    ]
+
+    # Add common metadata fields per source category
+    metadata_fields = {
+        "publications": [
+            {"name": "metadata.authors", "label": "Authors", "type": "array", "category": "metadata", "operators": ["contains"]},
+            {"name": "metadata.journal", "label": "Journal", "type": "string", "category": "metadata", "operators": ["equals", "contains"]},
+            {"name": "metadata.publication_date", "label": "Publication Date", "type": "date", "category": "metadata", "operators": ["equals", "greater_than", "less_than"]},
+            {"name": "metadata.article_types", "label": "Article Type", "type": "array", "category": "metadata", "operators": ["contains"]},
+            {"name": "metadata.keywords", "label": "Keywords", "type": "array", "category": "metadata", "operators": ["contains"]},
+        ],
+        "trials": [
+            {"name": "metadata.phase", "label": "Phase", "type": "string", "category": "metadata", "operators": ["equals", "in"]},
+            {"name": "metadata.status", "label": "Status", "type": "string", "category": "metadata", "operators": ["equals", "in"]},
+            {"name": "metadata.sponsor", "label": "Sponsor", "type": "string", "category": "metadata", "operators": ["equals", "contains"]},
+            {"name": "metadata.study_type", "label": "Study Type", "type": "string", "category": "metadata", "operators": ["equals", "in"]},
+            {"name": "metadata.enrollment", "label": "Enrollment", "type": "number", "category": "metadata", "operators": ["equals", "greater_than", "less_than"]},
+        ],
+        "community": [
+            {"name": "metadata.subreddit", "label": "Subreddit", "type": "string", "category": "metadata", "operators": ["equals"]},
+            {"name": "metadata.score", "label": "Score", "type": "number", "category": "metadata", "operators": ["greater_than", "less_than"]},
+            {"name": "metadata.num_comments", "label": "Comments", "type": "number", "category": "metadata", "operators": ["greater_than", "less_than"]},
+        ],
+        "safety": [
+            {"name": "metadata.serious", "label": "Serious", "type": "boolean", "category": "metadata", "operators": ["equals"]},
+            {"name": "metadata.reactions", "label": "Reactions", "type": "array", "category": "metadata", "operators": ["contains"]},
+            {"name": "metadata.patient_age", "label": "Patient Age", "type": "string", "category": "metadata", "operators": ["equals"]},
+        ],
+    }
+
+    fields = base_fields.copy()
+    if source_category and source_category in metadata_fields:
+        fields.extend(metadata_fields[source_category])
+    else:
+        # Include all metadata fields
+        for cat_fields in metadata_fields.values():
+            fields.extend(cat_fields)
+
+    # Populate source sample values
+    async with get_pg_connection() as conn:
+        sources = await conn.fetch("SELECT DISTINCT name FROM sources WHERE is_active = true ORDER BY name")
+        for f in fields:
+            if f["name"] == "source":
+                f["sample_values"] = [{"value": r["name"]} for r in sources]
+
+    categories = {
+        "core": "Core Fields",
+        "metadata": "Metadata Fields",
+    }
+
+    operators = {
+        "equals": {"label": "Equals", "icon": "="},
+        "not_equals": {"label": "Not Equals", "icon": "≠"},
+        "contains": {"label": "Contains", "icon": "⊃"},
+        "greater_than": {"label": "Greater Than", "icon": ">"},
+        "less_than": {"label": "Less Than", "icon": "<"},
+        "between": {"label": "Between", "icon": "↔"},
+        "in": {"label": "In", "icon": "∈"},
+    }
+
+    return {"fields": fields, "categories": categories, "operators": operators}
