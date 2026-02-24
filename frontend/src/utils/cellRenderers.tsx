@@ -100,6 +100,23 @@ export const renderCellValue = (value: any, col: any): React.ReactNode => {
     return renderer(value, col) || value;
   }
 
+  // Handle arrays (even when column type isn't "list")
+  if (Array.isArray(value)) {
+    return cellRenderers.list(value, col) || String(value);
+  }
+
+  // Handle objects
+  if (typeof value === 'object' && value !== null) {
+    const display = value.name || value.title || value.label || value.value;
+    if (display) return String(display);
+    const str = JSON.stringify(value);
+    return (
+      <span className="truncated" title={str}>
+        {str.length > 100 ? str.substring(0, 100) + '...' : str}
+      </span>
+    );
+  }
+
   // Default: truncate long strings
   const strValue = String(value);
   if (strValue.length > 100) {
