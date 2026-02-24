@@ -23,6 +23,11 @@ from scrapers.google_news import GoogleNewsScraper
 from scrapers.healthunlocked import HealthUnlockedScraper
 from scrapers.medical_news_today import MedicalNewsTodayScraper
 from scrapers.stackexchange_health import StackExchangeHealthScraper
+from scrapers.biorxiv import BioRxivScraper
+from scrapers.openfda import OpenFDAScraper
+from scrapers.who_don import WHODiseaseOutbreakNewsScraper
+from scrapers.wikipedia import WikipediaScraper
+from scrapers.drugscom import DrugsComScraper
 
 router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
 
@@ -113,6 +118,17 @@ async def trigger_scrape(
         "medicalnewstoday": MedicalNewsTodayScraper,
         "stack exchange health": StackExchangeHealthScraper,
         "stackexchange": StackExchangeHealthScraper,
+        "biorxiv": BioRxivScraper,
+        "biorxiv/medrxiv": BioRxivScraper,
+        "medrxiv": BioRxivScraper,
+        "openfda": OpenFDAScraper,
+        "openfda drug labels": OpenFDAScraper,
+        "who disease outbreak news": WHODiseaseOutbreakNewsScraper,
+        "who don": WHODiseaseOutbreakNewsScraper,
+        "wikipedia": WikipediaScraper,
+        "wikipedia medical": WikipediaScraper,
+        "drugs.com": DrugsComScraper,
+        "drugscom": DrugsComScraper,
     }
 
     if source_name_lower not in scraper_map:
