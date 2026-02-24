@@ -573,7 +573,9 @@ async def get_filters(category: Optional[str] = None):
 @router.get("/counts")
 async def get_search_counts(
     diseases: Optional[str] = None,
-    q: Optional[str] = None
+    q: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ):
     """
     Get counts of results per source category for given filters.
@@ -609,6 +611,24 @@ async def get_search_counts(
             """)
             params.append(q)
             param_count += 1
+
+        # Add date range filters
+        if date_from:
+            from datetime import date as date_type
+            try:
+                where_conditions.append(f"d.source_updated_at::date > ${param_count}")
+                params.append(date_type.fromisoformat(date_from))
+                param_count += 1
+            except ValueError:
+                pass
+        if date_to:
+            from datetime import date as date_type
+            try:
+                where_conditions.append(f"d.source_updated_at::date < ${param_count}")
+                params.append(date_type.fromisoformat(date_to))
+                param_count += 1
+            except ValueError:
+                pass
 
         where_clause = " AND ".join(where_conditions)
 

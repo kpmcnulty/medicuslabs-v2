@@ -761,3 +761,51 @@
   color: #333;
   font-weight: 600;
 }
+
+/* Global filter bar */
+.global-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid #e9ecef;
+}
+.global-filter-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+  white-space: nowrap;
+}
+.global-date-input {
+  padding: 6px 10px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #495057;
+  background: white;
+}
+.global-date-input:focus {
+  border-color: #007bff;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0,123,255,0.15);
+}
+.global-filter-separator {
+  color: #888;
+  font-size: 13px;
+}
+.global-filter-clear {
+  padding: 4px 10px;
+  background: none;
+  border: 1px solid #dc3545;
+  color: #dc3545;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.global-filter-clear:hover {
+  background: #dc3545;
+  color: white;
+}

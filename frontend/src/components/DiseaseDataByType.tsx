@@ -105,6 +105,9 @@ const DiseaseDataByType: React.FC = () => {
     const timer = setTimeout(() => setDebouncedQuery(searchQuery), 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+  const [globalDateFrom, setGlobalDateFrom] = useState('');
+  const [globalDateTo, setGlobalDateTo] = useState('');
+
   const [counts, setCounts] = useState<Record<string, number>>({
     publications: 0,
     trials: 0,
@@ -126,8 +129,10 @@ const DiseaseDataByType: React.FC = () => {
         const params = new URLSearchParams();
         params.set('diseases', selectedDiseases.join(','));
         if (debouncedQuery.trim()) {
-          params.set('q', searchQuery.trim());
+          params.set('q', debouncedQuery.trim());
         }
+        if (globalDateFrom) params.set('date_from', globalDateFrom);
+        if (globalDateTo) params.set('date_to', globalDateTo);
 
         const response = await api.get(`/api/search/counts?${params.toString()}`);
         setCounts(response.data);
@@ -139,7 +144,7 @@ const DiseaseDataByType: React.FC = () => {
 
     const timeoutId = setTimeout(fetchCounts, 300);
     return () => clearTimeout(timeoutId);
-  }, [selectedDiseases, debouncedQuery]);
+  }, [selectedDiseases, debouncedQuery, globalDateFrom, globalDateTo]);
 
   // Fetch data for a specific data type
   const fetchDataType = useCallback(async (
@@ -181,11 +186,18 @@ const DiseaseDataByType: React.FC = () => {
       }
 
       // Convert column filters to API format
-      if (columnFilters.length > 0) {
-        query.columnFilters = columnFilters.map((f: any) => ({
-          id: f.id,
-          value: f.value,
-        }));
+      const allFilters = [...columnFilters.map((f: any) => ({ id: f.id, value: f.value }))];
+      
+      // Inject global date filters
+      if (globalDateFrom) {
+        allFilters.push({ id: 'created_date', value: { conditions: [{ operator: 'after', value: globalDateFrom }], joinOperator: 'AND' } });
+      }
+      if (globalDateTo) {
+        allFilters.push({ id: 'created_date', value: { conditions: [{ operator: 'before', value: globalDateTo }], joinOperator: 'AND' } });
+      }
+      
+      if (allFilters.length > 0) {
+        query.columnFilters = allFilters;
       }
 
       const response = await api.post('/api/search/unified', query);
@@ -217,7 +229,7 @@ const DiseaseDataByType: React.FC = () => {
         }
       }));
     }
-  }, [selectedDiseases, debouncedQuery]);
+  }, [selectedDiseases, debouncedQuery, globalDateFrom, globalDateTo]);
 
   // Initialize all data types when filters change
   useEffect(() => {
@@ -230,7 +242,7 @@ const DiseaseDataByType: React.FC = () => {
     Promise.all(
       DATA_TYPE_CONFIGS.map(config => fetchDataType(config.id, 0, 20, []))
     ).finally(() => setLoading(false));
-  }, [selectedDiseases, debouncedQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedDiseases, debouncedQuery, globalDateFrom, globalDateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCollapse = (dataTypeId: string) => {
     setResults(prev => ({
@@ -366,26 +378,33 @@ const DiseaseDataByType: React.FC = () => {
           />
         </div>
 
+        {/* Global filters */}
         {selectedDiseases.length > 0 && (
-          <div className="active-filters">
-            <span className="filter-label">Diseases:</span>
-            {selectedDiseases.map(disease => (
-              <span key={disease} className="filter-tag">
-                {disease}
-                <button
-                  onClick={() => setSelectedDiseases(selectedDiseases.filter(d => d !== disease))}
-                  className="remove-filter"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            <button
-              onClick={() => setSelectedDiseases([])}
-              className="clear-all-filters"
-            >
-              Clear All
-            </button>
+          <div className="global-filters">
+            <span className="global-filter-label">📅 Date Range:</span>
+            <input
+              type="date"
+              value={globalDateFrom}
+              onChange={(e) => setGlobalDateFrom(e.target.value)}
+              className="global-date-input"
+              placeholder="From"
+            />
+            <span className="global-filter-separator">to</span>
+            <input
+              type="date"
+              value={globalDateTo}
+              onChange={(e) => setGlobalDateTo(e.target.value)}
+              className="global-date-input"
+              placeholder="To"
+            />
+            {(globalDateFrom || globalDateTo) && (
+              <button
+                className="global-filter-clear"
+                onClick={() => { setGlobalDateFrom(''); setGlobalDateTo(''); }}
+              >
+                × Clear
+              </button>
+            )}
           </div>
         )}
       </div>
