@@ -147,7 +147,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
     if search_query.q:
         sql += """,
                 ts_rank(
-                    to_tsvector('english', COALESCE(d.content, '') || ' ' || COALESCE(d.title, '')),
+                    to_tsvector('english', COALESCE(d.title, '') || ' ' || COALESCE(d.content, '') || ' ' || COALESCE(d.summary, '')),
                     plainto_tsquery('english', $1)
                 ) as rank
         """
@@ -164,7 +164,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
     param_count = 1
 
     if search_query.q:
-        sql += f" AND to_tsvector('english', COALESCE(d.content, '') || ' ' || COALESCE(d.title, '')) @@ plainto_tsquery('english', ${param_count})"
+        sql += f" AND to_tsvector('english', COALESCE(d.title, '') || ' ' || COALESCE(d.content, '') || ' ' || COALESCE(d.summary, '')) @@ plainto_tsquery('english', ${param_count})"
         params.append(search_query.q)
         param_count += 1
 
@@ -294,7 +294,7 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                 sql += f" AND ({joined})"
 
     sql += ")"
-    sql += "\n        SELECT * FROM search_results\n"
+    sql += "\n        SELECT *, COUNT(*) OVER() as total_count FROM search_results\n"
 
     # Sorting
     if search_query.sort_by == "relevance" and search_query.q:
@@ -343,13 +343,8 @@ async def unified_search(search_query: UnifiedSearchQuery):
 
         results = await conn.fetch(sql, *params)
 
-        # Get total count
-        count_sql = sql.split("ORDER BY")[0].replace(
-            "SELECT * FROM search_results",
-            "SELECT COUNT(*) FROM search_results"
-        )
-        count_params = params[:-2] if len(params) >= 2 else params
-        total_count = await conn.fetchval(count_sql, *count_params)
+        # Total count comes from the window function
+        total_count = results[0]['total_count'] if results else 0
 
         # Process results
         search_results = []
@@ -609,7 +604,7 @@ async def get_search_counts(
         # Add text search if provided
         if q:
             where_conditions.append(f"""
-                to_tsvector('english', COALESCE(d.content, '') || ' ' || COALESCE(d.title, ''))
+                to_tsvector('english', COALESCE(d.title, '') || ' ' || COALESCE(d.content, '') || ' ' || COALESCE(d.summary, ''))
                 @@ plainto_tsquery('english', ${param_count})
             """)
             params.append(q)
