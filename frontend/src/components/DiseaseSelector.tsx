@@ -99,14 +99,7 @@ const DiseaseSelector: React.FC<DiseaseSelectorProps> = ({
 
   return (
     <div className="disease-selector" ref={dropdownRef}>
-      <div className="selector-label">
-        <span className="label-text">Disease/Condition</span>
-        {selectedDiseases.length > 0 && (
-          <button className="clear-btn" onClick={handleClear} title="Clear selection">
-            ✕
-          </button>
-        )}
-      </div>
+      {/* Label removed — dropdown is self-explanatory */}
       
       <div className="selector-input-wrapper">
         <div 
