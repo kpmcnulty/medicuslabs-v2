@@ -427,6 +427,36 @@ const DiseaseDataByType: React.FC = () => {
                       )
                     )}
                   </p>
+                  {/* Active filter tags */}
+                  {results[config.id]?.columnFilters?.length > 0 && (
+                    <div className="card-filters">
+                      {results[config.id].columnFilters.map((f: any, idx: number) => {
+                        const col = config.columns.find((c: any) => c.key === f.id);
+                        const label = col?.label || f.id;
+                        const conditions = f.value?.conditions || [];
+                        const desc = conditions
+                          .filter((c: any) => c.value || ['blank', 'notBlank'].includes(c.operator))
+                          .map((c: any) => {
+                            const opLabels: Record<string, string> = {
+                              contains: '⊃', equals: '=', notEqual: '≠',
+                              startsWith: 'starts', endsWith: 'ends',
+                              notContains: '⊅', greaterThan: '>', lessThan: '<',
+                              greaterThanOrEqual: '≥', lessThanOrEqual: '≤',
+                              before: '<', after: '>', between: '↔',
+                              blank: 'empty', notBlank: 'not empty',
+                            };
+                            const op = opLabels[c.operator] || c.operator;
+                            return `${op} ${c.value || ''}`.trim();
+                          })
+                          .join(` ${f.value?.joinOperator || 'AND'} `);
+                        return (
+                          <span key={idx} className="card-filter-tag">
+                            <strong>{label}</strong> {desc}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </label>
             ))}
