@@ -291,6 +291,14 @@
   user-select: none;
 }
 
+.header-cell-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+  position: relative;
+}
+
 /* TanStack column pinning handles sticky positioning via inline styles */
 
 .dynamic-data-table th.sortable {
@@ -608,6 +616,40 @@
 }
 
 /* Selection Features */
+.active-filters-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #f0f7ff;
+  border-radius: 6px;
+  border: 1px solid #b3d4fc;
+  margin-right: 12px;
+}
+
+.filter-count {
+  font-size: 14px;
+  color: #0366d6;
+  font-weight: 500;
+}
+
+.clear-filters-btn {
+  padding: 4px 8px;
+  background: white;
+  border: 1px solid #0366d6;
+  border-radius: 4px;
+  color: #0366d6;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clear-filters-btn:hover {
+  background: #0366d6;
+  color: white;
+}
+
 .selection-info {
   display: flex;
   align-items: center;

@@ -13,6 +13,7 @@ import {
   ColumnOrderState,
 } from '@tanstack/react-table';
 import { renderCellValue } from '../utils/cellRenderers';
+import { ColumnFilterMenu } from './filters/ColumnFilterMenu';
 import './DynamicDataTable.css';
 
 interface DynamicDataTableProps {
@@ -103,7 +104,7 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
       enableSorting: false,
       enableColumnFilter: false,
     };
-    
+
     const dataColumns = columnConfig.map((col: any) => ({
       id: col.key,
       accessorKey: col.key,
@@ -112,16 +113,25 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
       enableSorting: col.sortable !== false,
       // Enable column filtering for server-side
       enableColumnFilter: true,
+      // Use accessorFn for nested paths like metadata.xxx
+      accessorFn: (row: any) => {
+        const keys = col.key.split('.');
+        let value: any = row;
+        for (const key of keys) {
+          value = value?.[key];
+        }
+        return value;
+      },
       cell: ({ getValue, row }: any) => {
         const value = getValue();
-        
+
         // Make title column a clickable link if there's a URL
         if (col.key === 'title' && row.original.url) {
           return (
-            <a 
-              href={row.original.url} 
-              target="_blank" 
-              rel="noopener noreferrer" 
+            <a
+              href={row.original.url}
+              target="_blank"
+              rel="noopener noreferrer"
               className="title-link"
               onClick={(e) => e.stopPropagation()}
             >
@@ -129,11 +139,11 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
             </a>
           );
         }
-        
+
         return renderCellValue(value, col);
       },
     }));
-    
+
     return [selectColumn, ...dataColumns];
   }, [columnConfig]);
 
@@ -206,6 +216,21 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
     <div className="dynamic-data-table">
       <div className="table-toolbar">
         <div className="toolbar-left">
+          {columnFilters && columnFilters.length > 0 && (
+            <div className="active-filters-info">
+              <span className="filter-count">{columnFilters.length} filter{columnFilters.length > 1 ? 's' : ''} active</span>
+              <button
+                className="clear-filters-btn"
+                onClick={() => {
+                  if (onColumnFiltersChange) {
+                    onColumnFiltersChange([]);
+                  }
+                }}
+              >
+                Clear all filters
+              </button>
+            </div>
+          )}
           {Object.keys(rowSelection).length > 0 && (
             <div className="selection-info">
               {Object.keys(rowSelection).length} row{Object.keys(rowSelection).length > 1 ? 's' : ''} selected
@@ -379,33 +404,41 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
                         ${header.column.getIsSorted() ? 'sorted' : ''}
                       `}
                     >
-                  <div 
-                    className="header-content"
-                    onClick={header.column.getToggleSortingHandler()}
-                    style={{ cursor: header.column.getCanSort() ? 'pointer' : 'default' }}
-                  >
-                    <span className="header-label">
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                    </span>
-                    {header.column.getCanSort() && (
-                      <span className="sort-indicator">
-                        {header.column.getIsSorted() === 'asc' ? (
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                            <path d="M6 3L2 8h8L6 3z"/>
-                          </svg>
-                        ) : header.column.getIsSorted() === 'desc' ? (
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                            <path d="M6 9L10 4H2L6 9z"/>
-                          </svg>
-                        ) : (
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{ opacity: 0.3 }}>
-                            <path d="M6 2L3 5h6L6 2zM6 10l3-3H3l3 3z"/>
-                          </svg>
+                  <div className="header-cell-content">
+                    <div
+                      className="header-content"
+                      onClick={header.column.getToggleSortingHandler()}
+                      style={{ cursor: header.column.getCanSort() ? 'pointer' : 'default' }}
+                    >
+                      <span className="header-label">
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
                         )}
                       </span>
+                      {header.column.getCanSort() && (
+                        <span className="sort-indicator">
+                          {header.column.getIsSorted() === 'asc' ? (
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                              <path d="M6 3L2 8h8L6 3z"/>
+                            </svg>
+                          ) : header.column.getIsSorted() === 'desc' ? (
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                              <path d="M6 9L10 4H2L6 9z"/>
+                            </svg>
+                          ) : (
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{ opacity: 0.3 }}>
+                              <path d="M6 2L3 5h6L6 2zM6 10l3-3H3l3 3z"/>
+                            </svg>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    {header.column.id !== 'select' && header.column.getCanFilter() && (
+                      <ColumnFilterMenu
+                        column={header.column}
+                        columnConfig={columnConfig.find((col: any) => col.key === header.column.id)}
+                      />
                     )}
                   </div>
                   {header.column.getCanResize() && (

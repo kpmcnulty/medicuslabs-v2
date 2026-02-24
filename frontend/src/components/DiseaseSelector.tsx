@@ -36,10 +36,10 @@ const DiseaseSelector: React.FC<DiseaseSelectorProps> = ({
         const diseaseList = data.diseases || [];
         setDiseases(diseaseList);
         
-        // Don't auto-select all diseases - let user choose
-        // if (selectedDiseases.length === 0 && diseaseList.length > 0) {
-        //   onDiseasesChange(diseaseList.map((d: Disease) => d.value));
-        // }
+        // Auto-select all diseases on load
+        if (selectedDiseases.length === 0 && diseaseList.length > 0) {
+          onDiseasesChange(diseaseList.map((d: Disease) => d.value));
+        }
       } catch (error) {
         console.error('Failed to fetch diseases:', error);
         setDiseases([]);
@@ -99,14 +99,7 @@ const DiseaseSelector: React.FC<DiseaseSelectorProps> = ({
 
   return (
     <div className="disease-selector" ref={dropdownRef}>
-      <div className="selector-label">
-        <span className="label-text">Disease/Condition</span>
-        {selectedDiseases.length > 0 && (
-          <button className="clear-btn" onClick={handleClear} title="Clear selection">
-            ✕
-          </button>
-        )}
-      </div>
+      {/* Label removed — dropdown is self-explanatory */}
       
       <div className="selector-input-wrapper">
         <div 

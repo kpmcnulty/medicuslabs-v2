@@ -5,10 +5,7 @@ import os
 class Settings(BaseSettings):
     # Database
     database_url: str = os.getenv("DATABASE_URL", "postgresql://medical_user:medical_pass@localhost:5432/medical_data")
-    
-    # Redis
-    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    
+
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8000

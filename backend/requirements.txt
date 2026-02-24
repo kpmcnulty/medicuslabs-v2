@@ -13,11 +13,6 @@ sqlalchemy==2.0.23
 pgvector==0.2.3
 numpy==1.26.2
 
-# Task queue
-celery[redis]==5.3.4
-flower==2.0.1
-redis>=4.5.2,<5.0.0
-
 # Web scraping
 httpx==0.25.2
 beautifulsoup4==4.12.2
@@ -36,6 +31,7 @@ email-validator==2.1.0
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 
 # Monitoring and logging
 loguru==0.7.2

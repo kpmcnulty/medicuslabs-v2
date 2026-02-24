@@ -7,8 +7,6 @@ import ProtectedRoute from './components/admin/ProtectedRoute';
 import Dashboard from './components/admin/Dashboard';
 import Sources from './components/admin/Sources';
 import Diseases from './components/admin/Diseases';
-import Jobs from './components/admin/Jobs';
-import Schedules from './components/admin/Schedules';
 import './App.css';
 
 function App() {
@@ -33,8 +31,6 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="sources" element={<Sources />} />
             <Route path="diseases" element={<Diseases />} />
-            <Route path="jobs" element={<Jobs />} />
-            <Route path="schedules" element={<Schedules />} />
           </Route>
         </Routes>
       </div>

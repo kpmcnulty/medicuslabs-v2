@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Column } from '@tanstack/react-table';
 import './ColumnFilterMenu.css';
 
@@ -113,55 +114,26 @@ export const ColumnFilterMenu: React.FC<ColumnFilterMenuProps> = ({ column, colu
         if (!buttonRef.current || !menuRef.current) return;
         
         const buttonRect = buttonRef.current.getBoundingClientRect();
-        const menuWidth = 320; // min-width of menu
-        const menuHeight = menuRef.current.offsetHeight || 400; // estimated height
+        const menuWidth = 320;
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
-        const scrollY = window.scrollY;
         
-        // Calculate available space
-        const spaceOnRight = windowWidth - buttonRect.right;
-        const spaceOnLeft = buttonRect.left;
-        const spaceBelow = windowHeight - buttonRect.bottom;
+        // Horizontal: try to center under button, clamp to viewport
+        let left = buttonRect.left + buttonRect.width / 2 - menuWidth / 2;
+        left = Math.max(8, Math.min(left, windowWidth - menuWidth - 8));
         
-        // Determine horizontal position
-        let horizontalPos = 'center';
-        let left = buttonRect.left + buttonRect.width / 2;
-        
-        if (spaceOnRight < menuWidth / 2 && spaceOnLeft > spaceOnRight) {
-          horizontalPos = 'right';
-          left = buttonRect.right;
-        } else if (buttonRect.left < menuWidth / 2) {
-          horizontalPos = 'left';
-          left = buttonRect.left;
+        // Vertical: below button, or above if not enough space
+        const menuHeight = menuRef.current.offsetHeight || 350;
+        let top = buttonRect.bottom + 4;
+        if (top + menuHeight > windowHeight && buttonRect.top > menuHeight) {
+          top = buttonRect.top - menuHeight - 4;
         }
         
-        // Determine vertical position
-        let top = buttonRect.bottom + scrollY + 8;
-        
-        // If not enough space below and more space above, position above
-        if (spaceBelow < menuHeight && buttonRect.top > menuHeight) {
-          top = buttonRect.top + scrollY - menuHeight - 8;
-        }
-        
-        // Apply position
-        if (menuRef.current) {
-          menuRef.current.style.top = `${top}px`;
-          menuRef.current.style.left = `${left}px`;
-        }
-        
-        setMenuPosition(horizontalPos as 'left' | 'right' | 'center');
+        menuRef.current.style.top = `${top}px`;
+        menuRef.current.style.left = `${left}px`;
       };
       
-      // Position immediately and on scroll/resize
       positionMenu();
-      window.addEventListener('scroll', positionMenu);
-      window.addEventListener('resize', positionMenu);
-      
-      return () => {
-        window.removeEventListener('scroll', positionMenu);
-        window.removeEventListener('resize', positionMenu);
-      };
     }
   }, [isOpen]);
 
@@ -294,7 +266,7 @@ export const ColumnFilterMenu: React.FC<ColumnFilterMenuProps> = ({ column, colu
         onChange={(e) => updateCondition(index, 'value', e.target.value)}
         placeholder="Enter value..."
         className="filter-value-input"
-        autoFocus={index === activeCondition}
+        
       />
     );
   };
@@ -312,11 +284,11 @@ export const ColumnFilterMenu: React.FC<ColumnFilterMenuProps> = ({ column, colu
         </svg>
       </button>
 
-      {isOpen && (
+      {isOpen && createPortal(
         <div 
           ref={menuRef} 
           className={`filter-menu-dropdown position-${menuPosition}`}
-          style={{ zIndex: 9999 }}
+          style={{ zIndex: 9999, position: 'fixed' }}
         >
           <div className="filter-menu-header">
             <h4>Filter: {columnConfig?.label || column.id}</h4>
@@ -403,7 +375,8 @@ export const ColumnFilterMenu: React.FC<ColumnFilterMenuProps> = ({ column, colu
               Apply
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
