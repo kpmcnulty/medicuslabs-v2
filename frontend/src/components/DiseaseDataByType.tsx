@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 import DynamicDataTable from './DynamicDataTable';
 import DiseaseSelector from './DiseaseSelector';
 import './DiseaseDataByType.css';
@@ -265,6 +266,45 @@ const DiseaseDataByType: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportAllXLSX = () => {
+    const wb = XLSX.utils.book_new();
+    let sheetsAdded = 0;
+
+    DATA_TYPE_CONFIGS.forEach(config => {
+      const typeResults = results[config.id];
+      if (!typeResults || typeResults.collapsed || typeResults.data.length === 0) return;
+
+      const rows = typeResults.data.map(row => {
+        const obj: any = {};
+        config.columns.forEach(col => {
+          const keys = col.key.split('.');
+          let value: any = row;
+          for (const key of keys) {
+            value = value?.[key];
+          }
+          if (Array.isArray(value)) {
+            obj[col.label] = value.slice(0, 5).join('; ');
+          } else if (typeof value === 'object' && value !== null) {
+            obj[col.label] = value.name || value.title || JSON.stringify(value);
+          } else {
+            obj[col.label] = value ?? '';
+          }
+        });
+        return obj;
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, config.name.substring(0, 31));
+      sheetsAdded++;
+    });
+
+    if (sheetsAdded === 0) return;
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    const diseases = selectedDiseases.slice(0, 3).join('-').replace(/\s+/g, '_');
+    XLSX.writeFile(wb, `medicuslabs-${diseases}-${dateStr}.xlsx`);
+  };
+
   return (
     <div className="disease-data-by-type">
       <header className="search-header">
@@ -332,12 +372,18 @@ const DiseaseDataByType: React.FC = () => {
           {/* Summary Cards */}
           <div className="summary-cards">
             {DATA_TYPE_CONFIGS.map(config => (
-              <div
+              <label
                 key={config.id}
-                className={`summary-card ${counts[config.id] === 0 ? 'disabled' : ''}`}
-                style={{ borderLeftColor: config.color }}
-                onClick={() => counts[config.id] > 0 && handleCardClick(config.id)}
+                className={`summary-card ${counts[config.id] === 0 ? 'disabled' : ''} ${results[config.id]?.collapsed ? 'unchecked' : 'checked'}`}
+                style={{ borderLeftColor: results[config.id]?.collapsed ? '#ccc' : config.color }}
               >
+                <input
+                  type="checkbox"
+                  checked={!results[config.id]?.collapsed}
+                  onChange={() => counts[config.id] > 0 && toggleCollapse(config.id)}
+                  disabled={counts[config.id] === 0}
+                  className="card-checkbox"
+                />
                 <div className="card-icon">{config.icon}</div>
                 <div className="card-content">
                   <h3>{config.name}</h3>
@@ -346,18 +392,20 @@ const DiseaseDataByType: React.FC = () => {
                     <span className="card-label"> results</span>
                   </p>
                 </div>
-                <button
-                  className={`card-toggle ${results[config.id]?.collapsed ? 'collapsed' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleCollapse(config.id);
-                  }}
-                  aria-label={results[config.id]?.collapsed ? 'Expand' : 'Collapse'}
-                >
-                  {results[config.id]?.collapsed ? '▼' : '▲'}
-                </button>
-              </div>
+              </label>
             ))}
+          </div>
+
+          {/* Export All */}
+          <div className="export-all-bar">
+            <button
+              className="export-all-btn"
+              onClick={handleExportAllXLSX}
+              disabled={Object.values(results).every(r => !r || r.collapsed || r.data.length === 0)}
+            >
+              📊 Export All as XLSX
+            </button>
+            <span className="export-hint">Exports visible categories as separate sheets</span>
           </div>
 
           {/* Table Sections */}
@@ -384,14 +432,7 @@ const DiseaseDataByType: React.FC = () => {
                         onClick={() => handleExport(config.id)}
                         disabled={typeResults.data.length === 0}
                       >
-                        Export CSV
-                      </button>
-                      <button
-                        className={`collapse-btn ${typeResults.collapsed ? 'collapsed' : ''}`}
-                        onClick={() => toggleCollapse(config.id)}
-                        aria-label={typeResults.collapsed ? 'Expand' : 'Collapse'}
-                      >
-                        {typeResults.collapsed ? '▼' : '▲'}
+                        📥 CSV
                       </button>
                     </div>
                   </div>
