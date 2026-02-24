@@ -19,6 +19,10 @@ from scrapers.clinicaltrials import ClinicalTrialsScraper
 from scrapers.pubmed import PubMedScraper
 from scrapers.reddit import RedditScraper
 from scrapers.faers import FAERSScraper
+from scrapers.google_news import GoogleNewsScraper
+from scrapers.healthunlocked import HealthUnlockedScraper
+from scrapers.medical_news_today import MedicalNewsTodayScraper
+from scrapers.stackexchange_health import StackExchangeHealthScraper
 
 router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
 
@@ -94,6 +98,14 @@ async def trigger_scrape(
         "reddit medical": RedditScraper,
         "faers": FAERSScraper,
         "fda faers": FAERSScraper,
+        "google news": GoogleNewsScraper,
+        "googlenews": GoogleNewsScraper,
+        "healthunlocked": HealthUnlockedScraper,
+        "health unlocked": HealthUnlockedScraper,
+        "medical news today": MedicalNewsTodayScraper,
+        "medicalnewstoday": MedicalNewsTodayScraper,
+        "stack exchange health": StackExchangeHealthScraper,
+        "stackexchange": StackExchangeHealthScraper,
     }
 
     if source_name_lower not in scraper_map:

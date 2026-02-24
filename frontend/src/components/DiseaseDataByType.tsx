@@ -55,6 +55,18 @@ const DATA_TYPE_CONFIGS: DataTypeConfig[] = [
     ]
   },
   {
+    id: 'news',
+    name: 'News',
+    icon: '📰',
+    color: '#fd7e14',
+    columns: [
+      { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'metadata.publisher', label: 'Publisher', type: 'string', width: '150' },
+      { key: 'metadata.published_date', label: 'Published', type: 'date', sortable: true, width: '130' },
+      { key: 'diseases', label: 'Diseases', type: 'array', width: '180' },
+    ]
+  },
+  {
     id: 'community',
     name: 'Community',
     icon: '💬',
@@ -111,6 +123,7 @@ const DiseaseDataByType: React.FC = () => {
   const [counts, setCounts] = useState<Record<string, number>>({
     publications: 0,
     trials: 0,
+    news: 0,
     community: 0,
     safety: 0,
   });
@@ -121,7 +134,7 @@ const DiseaseDataByType: React.FC = () => {
   useEffect(() => {
     const fetchCounts = async () => {
       if (selectedDiseases.length === 0) {
-        setCounts({ publications: 0, trials: 0, community: 0, safety: 0 });
+        setCounts({ publications: 0, trials: 0, news: 0, community: 0, safety: 0 });
         return;
       }
 
@@ -138,7 +151,7 @@ const DiseaseDataByType: React.FC = () => {
         setCounts(response.data);
       } catch (error) {
         console.error('Error fetching counts:', error);
-        setCounts({ publications: 0, trials: 0, community: 0, safety: 0 });
+        setCounts({ publications: 0, trials: 0, news: 0, community: 0, safety: 0 });
       }
     };
 
