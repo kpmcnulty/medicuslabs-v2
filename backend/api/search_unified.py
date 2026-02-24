@@ -308,13 +308,35 @@ async def unified_search(search_query: UnifiedSearchQuery):
 
         execution_time = int((time.time() - start_time) * 1000)
 
+        # Build column definitions from results
+        base_columns = [
+            {"field": "title", "headerName": "Title", "type": "text", "sortable": True},
+            {"field": "source", "headerName": "Source", "type": "text", "sortable": True},
+            {"field": "source_category", "headerName": "Category", "type": "text", "sortable": True},
+            {"field": "diseases", "headerName": "Diseases", "type": "array"},
+            {"field": "created_date", "headerName": "Date", "type": "date", "sortable": True},
+            {"field": "url", "headerName": "URL", "type": "link"},
+        ]
+
+        # Add metadata columns from first few results
+        metadata_fields = set()
+        for r in search_results[:20]:
+            for key in r.metadata.keys():
+                metadata_fields.add(key)
+        
+        metadata_columns = [
+            {"field": f"metadata.{f}", "headerName": f.replace("_", " ").title(), "type": "text"}
+            for f in sorted(metadata_fields)
+        ]
+
         return UnifiedSearchResponse(
             results=search_results,
             total=total_count or 0,
             limit=search_query.limit,
             offset=search_query.offset,
             query=search_query.q,
-            execution_time_ms=execution_time
+            execution_time_ms=execution_time,
+            columns=base_columns + metadata_columns
         )
 
 
