@@ -308,14 +308,14 @@ async def unified_search(search_query: UnifiedSearchQuery):
 
         execution_time = int((time.time() - start_time) * 1000)
 
-        # Build column definitions from results
+        # Build column definitions from results (key/label format for frontend DynamicDataTable)
         base_columns = [
-            {"field": "title", "headerName": "Title", "type": "text", "sortable": True},
-            {"field": "source", "headerName": "Source", "type": "text", "sortable": True},
-            {"field": "source_category", "headerName": "Category", "type": "text", "sortable": True},
-            {"field": "diseases", "headerName": "Diseases", "type": "array"},
-            {"field": "created_date", "headerName": "Date", "type": "date", "sortable": True},
-            {"field": "url", "headerName": "URL", "type": "link"},
+            {"key": "title", "label": "Title", "type": "text", "sortable": True, "width": "300"},
+            {"key": "source", "label": "Source", "type": "text", "sortable": True, "width": "150"},
+            {"key": "source_category", "label": "Category", "type": "text", "sortable": True, "width": "120"},
+            {"key": "diseases", "label": "Diseases", "type": "array", "width": "200"},
+            {"key": "created_date", "label": "Date", "type": "date", "sortable": True, "width": "120"},
+            {"key": "url", "label": "URL", "type": "link", "width": "100"},
         ]
 
         # Add metadata columns from first few results
@@ -325,7 +325,7 @@ async def unified_search(search_query: UnifiedSearchQuery):
                 metadata_fields.add(key)
         
         metadata_columns = [
-            {"field": f"metadata.{f}", "headerName": f.replace("_", " ").title(), "type": "text"}
+            {"key": f"metadata.{f}", "label": f.replace("_", " ").title(), "type": "text", "width": "150"}
             for f in sorted(metadata_fields)
         ]
 
