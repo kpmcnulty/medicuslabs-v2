@@ -310,12 +310,12 @@ async def unified_search(search_query: UnifiedSearchQuery):
 
         # Build column definitions from results (key/label format for frontend DynamicDataTable)
         base_columns = [
-            {"key": "title", "label": "Title", "type": "text", "sortable": True, "width": "300"},
-            {"key": "source", "label": "Source", "type": "text", "sortable": True, "width": "150"},
-            {"key": "source_category", "label": "Category", "type": "text", "sortable": True, "width": "120"},
-            {"key": "diseases", "label": "Diseases", "type": "array", "width": "200"},
-            {"key": "created_date", "label": "Date", "type": "date", "sortable": True, "width": "120"},
-            {"key": "url", "label": "URL", "type": "link", "width": "100"},
+            {"key": "title", "label": "Title", "type": "string", "sortable": True, "width": "300", "inputType": "text"},
+            {"key": "source", "label": "Source", "type": "string", "sortable": True, "width": "150", "inputType": "select", "fetchOptions": True, "optionsEndpoint": "/api/search/filter-options?field=source"},
+            {"key": "source_category", "label": "Category", "type": "string", "sortable": True, "width": "120", "inputType": "select", "fetchOptions": True, "optionsEndpoint": "/api/search/filter-options?field=source_category"},
+            {"key": "diseases", "label": "Diseases", "type": "array", "width": "200", "inputType": "select", "fetchOptions": True, "optionsEndpoint": "/api/search/filter-options?field=diseases"},
+            {"key": "created_date", "label": "Date", "type": "date", "sortable": True, "width": "120", "inputType": "date"},
+            {"key": "url", "label": "URL", "type": "string", "width": "100"},
         ]
 
         # Add metadata columns from first few results
@@ -325,7 +325,7 @@ async def unified_search(search_query: UnifiedSearchQuery):
                 metadata_fields.add(key)
         
         metadata_columns = [
-            {"key": f"metadata.{f}", "label": f.replace("_", " ").title(), "type": "text", "width": "150"}
+            {"key": f"metadata.{f}", "label": f.replace("_", " ").title(), "type": "string", "width": "150", "inputType": "text"}
             for f in sorted(metadata_fields)
         ]
 
@@ -338,6 +338,70 @@ async def unified_search(search_query: UnifiedSearchQuery):
             execution_time_ms=execution_time,
             columns=base_columns + metadata_columns
         )
+
+
+@router.get("/filter-options")
+async def get_filter_options(field: str):
+    """Get distinct values for a specific field for filtering"""
+    async with get_pg_connection() as conn:
+        # Base fields query from documents/sources table
+        if field in ['source', 'source_name']:
+            query = """
+                SELECT s.name as value, s.name as label, COUNT(d.id) as count
+                FROM sources s
+                LEFT JOIN documents d ON s.id = d.source_id
+                WHERE s.is_active = true
+                GROUP BY s.name
+                ORDER BY count DESC, s.name
+                LIMIT 100
+            """
+            results = await conn.fetch(query)
+        elif field == 'source_category':
+            query = """
+                SELECT s.category as value, s.category as label, COUNT(d.id) as count
+                FROM sources s
+                LEFT JOIN documents d ON s.id = d.source_id
+                WHERE s.is_active = true AND s.category IS NOT NULL
+                GROUP BY s.category
+                ORDER BY count DESC
+            """
+            results = await conn.fetch(query)
+        elif field == 'diseases':
+            query = """
+                SELECT dis.name as value, dis.name as label, COUNT(DISTINCT dd.document_id) as count
+                FROM diseases dis
+                LEFT JOIN document_diseases dd ON dis.id = dd.disease_id
+                GROUP BY dis.name
+                ORDER BY count DESC, dis.name
+                LIMIT 100
+            """
+            results = await conn.fetch(query)
+        else:
+            # Metadata field - extract from doc_metadata JSONB
+            # field should be like "publication_date" (without metadata. prefix)
+            query = """
+                SELECT DISTINCT
+                    doc_metadata->>$1 as value,
+                    doc_metadata->>$1 as label,
+                    COUNT(*) as count
+                FROM documents
+                WHERE doc_metadata->>$1 IS NOT NULL
+                GROUP BY doc_metadata->>$1
+                ORDER BY count DESC
+                LIMIT 100
+            """
+            results = await conn.fetch(query, field)
+
+        options = [
+            {
+                "value": row['value'],
+                "label": row['label'],
+                "count": row['count']
+            }
+            for row in results if row['value']
+        ]
+
+        return {"options": options}
 
 
 @router.get("/filters")
