@@ -104,7 +104,7 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
       enableSorting: false,
       enableColumnFilter: false,
     };
-    
+
     const dataColumns = columnConfig.map((col: any) => ({
       id: col.key,
       accessorKey: col.key,
@@ -113,16 +113,25 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
       enableSorting: col.sortable !== false,
       // Enable column filtering for server-side
       enableColumnFilter: true,
+      // Use accessorFn for nested paths like metadata.xxx
+      accessorFn: (row: any) => {
+        const keys = col.key.split('.');
+        let value: any = row;
+        for (const key of keys) {
+          value = value?.[key];
+        }
+        return value;
+      },
       cell: ({ getValue, row }: any) => {
         const value = getValue();
-        
+
         // Make title column a clickable link if there's a URL
         if (col.key === 'title' && row.original.url) {
           return (
-            <a 
-              href={row.original.url} 
-              target="_blank" 
-              rel="noopener noreferrer" 
+            <a
+              href={row.original.url}
+              target="_blank"
+              rel="noopener noreferrer"
               className="title-link"
               onClick={(e) => e.stopPropagation()}
             >
@@ -130,11 +139,11 @@ const DynamicDataTable = forwardRef<{ table: any }, DynamicDataTableProps>(({
             </a>
           );
         }
-        
+
         return renderCellValue(value, col);
       },
     }));
-    
+
     return [selectColumn, ...dataColumns];
   }, [columnConfig]);
 

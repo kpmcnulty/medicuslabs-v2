@@ -478,10 +478,80 @@ async def get_filters(category: Optional[str] = None):
         return filters
 
 
+@router.get("/counts")
+async def get_search_counts(
+    diseases: Optional[str] = None,
+    q: Optional[str] = None
+):
+    """
+    Get counts of results per source category for given filters.
+
+    Example: /api/search/counts?diseases=Multiple+Sclerosis&q=treatment
+    Returns: {"publications": 847, "trials": 23, "community": 156, "safety": 1204}
+    """
+    async with get_pg_connection() as conn:
+        # Build the base WHERE clause
+        where_conditions = ["1=1"]
+        params = []
+        param_count = 1
+
+        # Parse diseases parameter (comma-separated list)
+        if diseases:
+            disease_list = [d.strip() for d in diseases.split(',')]
+            where_conditions.append(f"""
+                EXISTS (
+                    SELECT 1 FROM document_diseases dd
+                    JOIN diseases dis ON dd.disease_id = dis.id
+                    WHERE dd.document_id = d.id
+                    AND dis.name = ANY(${param_count})
+                )
+            """)
+            params.append(disease_list)
+            param_count += 1
+
+        # Add text search if provided
+        if q:
+            where_conditions.append(f"""
+                to_tsvector('english', COALESCE(d.content, '') || ' ' || COALESCE(d.title, ''))
+                @@ plainto_tsquery('english', ${param_count})
+            """)
+            params.append(q)
+            param_count += 1
+
+        where_clause = " AND ".join(where_conditions)
+
+        # Query to get counts per category
+        query = f"""
+            SELECT
+                s.category,
+                COUNT(DISTINCT d.id) as count
+            FROM documents d
+            JOIN sources s ON d.source_id = s.id
+            WHERE {where_clause}
+            GROUP BY s.category
+        """
+
+        results = await conn.fetch(query, *params)
+
+        # Map results to the expected format
+        counts = {
+            "publications": 0,
+            "trials": 0,
+            "community": 0,
+            "safety": 0
+        }
+
+        for row in results:
+            if row['category'] in counts:
+                counts[row['category']] = row['count']
+
+        return counts
+
+
 @router.get("/unified/suggest")
 async def get_field_suggestions(source_category: Optional[str] = None, source: Optional[str] = None):
     """Return field metadata for the QueryBuilder"""
-    
+
     base_fields = [
         {"name": "title", "label": "Title", "type": "string", "category": "core", "operators": ["contains", "equals", "not_equals"]},
         {"name": "source", "label": "Source", "type": "string", "category": "core", "operators": ["equals", "not_equals", "in"],

@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
-import MultiDiseaseDataTables from './MultiDiseaseDataTables';
+import DynamicDataTable from './DynamicDataTable';
 import DiseaseSelector from './DiseaseSelector';
-import QueryBuilder, { QueryGroup } from './QueryBuilder';
 import './DiseaseDataByType.css';
 
 // Configure axios with the API base URL
@@ -14,400 +13,257 @@ const api = axios.create({
   },
 });
 
-interface SearchFilters {
-  diseases: string[];
-  query: string;
-  advancedQuery?: QueryGroup;
+interface DataTypeConfig {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  columns: any[];
+}
+
+const DATA_TYPE_CONFIGS: DataTypeConfig[] = [
+  {
+    id: 'publications',
+    name: 'Publications',
+    icon: '📄',
+    color: '#007bff',
+    columns: [
+      { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'metadata.authors', label: 'Authors', type: 'array', width: '200' },
+      { key: 'metadata.journal', label: 'Journal', type: 'string', width: '180' },
+      { key: 'metadata.publication_date', label: 'Publication Date', type: 'date', sortable: true, width: '140' },
+      { key: 'metadata.article_types', label: 'Article Types', type: 'array', width: '150' },
+      { key: 'metadata.keywords', label: 'Keywords', type: 'array', width: '200' },
+      { key: 'diseases', label: 'Diseases', type: 'array', width: '180' },
+    ]
+  },
+  {
+    id: 'trials',
+    name: 'Clinical Trials',
+    icon: '🧪',
+    color: '#28a745',
+    columns: [
+      { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'metadata.phase', label: 'Phase', type: 'string', width: '100' },
+      { key: 'metadata.status', label: 'Status', type: 'string', width: '120' },
+      { key: 'metadata.sponsor', label: 'Sponsor', type: 'string', width: '200' },
+      { key: 'metadata.study_type', label: 'Study Type', type: 'string', width: '150' },
+      { key: 'metadata.enrollment', label: 'Enrollment', type: 'number', width: '100' },
+      { key: 'metadata.start_date', label: 'Start Date', type: 'date', sortable: true, width: '120' },
+      { key: 'diseases', label: 'Diseases', type: 'array', width: '180' },
+    ]
+  },
+  {
+    id: 'community',
+    name: 'Community',
+    icon: '💬',
+    color: '#6f42c1',
+    columns: [
+      { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'metadata.subreddit', label: 'Subreddit', type: 'string', width: '150' },
+      { key: 'metadata.score', label: 'Score', type: 'number', sortable: true, width: '80' },
+      { key: 'metadata.num_comments', label: 'Comments', type: 'number', sortable: true, width: '100' },
+      { key: 'metadata.posted_date', label: 'Posted Date', type: 'date', sortable: true, width: '120' },
+      { key: 'diseases', label: 'Diseases', type: 'array', width: '180' },
+    ]
+  },
+  {
+    id: 'safety',
+    name: 'Adverse Events',
+    icon: '⚠️',
+    color: '#dc3545',
+    columns: [
+      { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'metadata.serious', label: 'Serious', type: 'boolean', width: '80' },
+      { key: 'metadata.reactions', label: 'Reactions', type: 'array', width: '200' },
+      { key: 'metadata.drugs', label: 'Drugs', type: 'array', width: '180' },
+      { key: 'metadata.patient_age', label: 'Patient Age', type: 'string', width: '100' },
+      { key: 'metadata.receive_date', label: 'Report Date', type: 'date', sortable: true, width: '120' },
+      { key: 'diseases', label: 'Diseases', type: 'array', width: '180' },
+    ]
+  },
+];
+
+interface DataTypeResults {
+  data: any[];
+  total: number;
+  loading: boolean;
+  collapsed: boolean;
+  pagination: { pageIndex: number; pageSize: number };
+  sorting: any[];
 }
 
 const DiseaseDataByType: React.FC = () => {
-  const [filters, setFilters] = useState<SearchFilters>({
-    diseases: [],
-    query: ''
+  const [selectedDiseases, setSelectedDiseases] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [counts, setCounts] = useState<Record<string, number>>({
+    publications: 0,
+    trials: 0,
+    community: 0,
+    safety: 0,
   });
-  
-  const [diseasesData, setDiseasesData] = useState<any[]>([]);
+  const [results, setResults] = useState<Record<string, DataTypeResults>>({});
   const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [isAdvancedMode, setIsAdvancedMode] = useState(false);
-  const [queryBuilderValid, setQueryBuilderValid] = useState(false);
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 50 });
-  const [sorting, setSorting] = useState<any[]>([]);
-  const [lastSearchQuery, setLastSearchQuery] = useState<any>(null);
-  const [isPaginating, setIsPaginating] = useState(false);
-  const [skipPaginationEffect, setSkipPaginationEffect] = useState(false);
 
-  const [activeDataTypes, setActiveDataTypes] = useState<string[]>(['publications', 'trials', 'community', 'faers']);
-  const [availableDataTypes] = useState([
-    { id: 'publications', name: 'Publications & Research', endpoint: '/api/search/publications', color: '#007bff' },
-    { id: 'trials', name: 'Clinical Trials', endpoint: '/api/search/trials', color: '#28a745' },
-    { id: 'community', name: 'Community Discussions', endpoint: '/api/search/community', color: '#6f42c1' },
-    { id: 'faers', name: 'Adverse Event Reports', endpoint: '/api/search/faers', color: '#dc3545' }
-  ]);
+  // Fetch counts when filters change
+  useEffect(() => {
+    const fetchCounts = async () => {
+      if (selectedDiseases.length === 0) {
+        setCounts({ publications: 0, trials: 0, community: 0, safety: 0 });
+        return;
+      }
 
-  // Convert QueryBuilder output to unified search API format
-  const convertQueryToUnifiedSearch = useCallback((query?: QueryGroup) => {
-    if (!query) return {};
-
-    const metadata: Record<string, any> = {};
-    const columnFilters: any[] = [];
-    let fullTextQuery: string | undefined;
-
-    const processGroup = (group: QueryGroup): any => {
-      const conditions: any[] = [];
-
-      // Process individual conditions
-      group.conditions.forEach(condition => {
-        if (!condition.field || !condition.operator) return;
-
-        // Special handling for full text search
-        if (condition.field === '_fulltext' && condition.operator === '$contains' && condition.value) {
-          fullTextQuery = condition.value;
-          return;
+      try {
+        const params = new URLSearchParams();
+        params.set('diseases', selectedDiseases.join(','));
+        if (searchQuery.trim()) {
+          params.set('q', searchQuery.trim());
         }
 
-        if (condition.field.startsWith('metadata.')) {
-          // Metadata field
-          const fieldName = condition.field.substring(9);
-          if (condition.operator === '$exists') {
-            metadata[fieldName] = { [condition.operator]: condition.value };
-          } else if (condition.value !== '' && condition.value != null) {
-            metadata[fieldName] = { [condition.operator]: condition.value };
-          }
-        } else {
-          // Core field - add to column filters
-          const operatorMapping: Record<string, string> = {
-            '$eq': 'equals',
-            '$ne': 'notEqual',
-            '$contains': 'contains',
-            '$startsWith': 'startsWith',
-            '$endsWith': 'endsWith',
-            '$gt': 'greaterThan',
-            '$gte': 'greaterThanOrEqual',
-            '$lt': 'lessThan',
-            '$lte': 'lessThanOrEqual',
-            '$between': 'inRange',
-            '$in': 'equals',
-            '$exists': 'notBlank'
-          };
-
-          columnFilters.push({
-            id: condition.field,
-            value: {
-              conditions: [{
-                operator: operatorMapping[condition.operator] || 'contains',
-                value: condition.value
-              }],
-              joinOperator: 'AND'
-            }
-          });
-        }
-      });
-
-      // Process nested groups
-      group.groups.forEach(nestedGroup => {
-        const nestedQuery = processGroup(nestedGroup);
-        if (Object.keys(nestedQuery).length > 0) {
-          conditions.push(nestedQuery);
-        }
-      });
-
-      if (conditions.length === 0) {
-        return {};
-      } else if (conditions.length === 1) {
-        return conditions[0];
-      } else {
-        return { [`$${group.operator.toLowerCase()}`]: conditions };
+        const response = await api.get(`/api/search/counts?${params.toString()}`);
+        setCounts(response.data);
+      } catch (error) {
+        console.error('Error fetching counts:', error);
+        setCounts({ publications: 0, trials: 0, community: 0, safety: 0 });
       }
     };
 
-    processGroup(query);
+    const timeoutId = setTimeout(fetchCounts, 300);
+    return () => clearTimeout(timeoutId);
+  }, [selectedDiseases, searchQuery]);
 
-    return {
-      q: fullTextQuery,
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      columnFilters: columnFilters.length > 0 ? columnFilters : undefined
-    };
-  }, []);
+  // Fetch data for a specific data type
+  const fetchDataType = useCallback(async (
+    dataTypeId: string,
+    pageIndex: number = 0,
+    pageSize: number = 20,
+    sorting: any[] = []
+  ) => {
+    if (selectedDiseases.length === 0) return;
 
-  // Handle pagination change
-  const handlePaginationChange = useCallback((newPagination: any) => {
-    setPagination(newPagination);
-  }, []);
-
-  // Handle sorting change
-  const handleSortingChange = useCallback((newSorting: any) => {
-    setSkipPaginationEffect(true); // Prevent double search
-    setSorting(newSorting);
-    setPagination({ pageIndex: 0, pageSize: pagination.pageSize }); // Reset to first page when sorting changes
-  }, [pagination.pageSize]);
-
-  // Build the search query (expensive operation)
-  const buildSearchQuery = useCallback(() => {
-    const hasBasicSearch = filters.query.trim().length > 0;
-    const hasAdvancedSearch = isAdvancedMode && queryBuilderValid && filters.advancedQuery;
-    const hasDiseases = filters.diseases.length > 0;
-
-    if (!hasBasicSearch && !hasAdvancedSearch && !hasDiseases) {
-      return null;
-    }
-
-    const unifiedQuery: any = {
-      diseases: filters.diseases.length > 0 ? filters.diseases : undefined,
-      source_categories: activeDataTypes,
-    };
-
-    // Add basic text search
-    if (hasBasicSearch) {
-      unifiedQuery.q = filters.query;
-    }
-
-    // Add advanced query filters
-    if (hasAdvancedSearch && filters.advancedQuery) {
-      const advancedFilters = convertQueryToUnifiedSearch(filters.advancedQuery);
-      if (advancedFilters.q) {
-        unifiedQuery.q = advancedFilters.q;
+    setResults(prev => ({
+      ...prev,
+      [dataTypeId]: {
+        ...(prev[dataTypeId] || { data: [], total: 0, collapsed: false }),
+        loading: true,
+        pagination: { pageIndex, pageSize },
+        sorting,
       }
-      if (advancedFilters.metadata) {
-        unifiedQuery.metadata = advancedFilters.metadata;
-      }
-      if (advancedFilters.columnFilters) {
-        unifiedQuery.columnFilters = advancedFilters.columnFilters;
-      }
-    }
-
-    return unifiedQuery;
-  }, [filters, activeDataTypes, isAdvancedMode, queryBuilderValid, convertQueryToUnifiedSearch]);
-
-  // Execute search with the given query and pagination/sorting
-  const executeSearch = useCallback(async (baseQuery: any, isPaginationOnly = false) => {
-    if (!baseQuery) {
-      setDiseasesData([]);
-      setHasSearched(false);
-      return;
-    }
-
-    // Show different loading state for pagination
-    if (isPaginationOnly) {
-      setIsPaginating(true);
-    } else {
-      setLoading(true);
-    }
-    setHasSearched(true);
+    }));
 
     try {
-      // Add pagination and sorting to the base query
-      const queryWithPagination = {
-        ...baseQuery,
-        limit: pagination.pageSize,
-        offset: pagination.pageIndex * pagination.pageSize
+      const query: any = {
+        diseases: selectedDiseases,
+        source_categories: [dataTypeId],
+        limit: pageSize,
+        offset: pageIndex * pageSize,
       };
 
-      // Add sorting parameters
+      if (searchQuery.trim()) {
+        query.q = searchQuery.trim();
+      }
+
+      // Add sorting
       if (sorting.length > 0) {
-        const sortField = sorting[0].id;
-        const sortOrder = sorting[0].desc ? 'desc' : 'asc';
-        
-        const sortFieldMapping: Record<string, string> = {
-          'created_at': 'date',
-          'source': 'source',
-          'title': 'title',
-          'created_date': 'created_date',
-          'updated_at': 'updated_at',
-          'source_updated_at': 'source_updated_at'
-        };
-        
-        queryWithPagination.sort_by = sortFieldMapping[sortField] || sortField;
-        queryWithPagination.sort_order = sortOrder;
+        query.sort_by = sorting[0].id;
+        query.sort_order = sorting[0].desc ? 'desc' : 'asc';
       }
 
-      // Execute search
-      const response = await api.post('/api/search/unified', queryWithPagination);
-      const searchResults = response.data;
+      const response = await api.post('/api/search/unified', query);
 
-      if (searchResults.results && searchResults.results.length > 0) {
-        // Group results by source category
-        const groupedResults = activeDataTypes.map(typeId => {
-          const typeResults = searchResults.results.filter((result: any) => 
-            result.source_category === typeId
-          );
-
-          if (typeResults.length === 0) return null;
-
-          const dataType = availableDataTypes.find(dt => dt.id === typeId);
-          if (!dataType) return null;
-
-          return {
-            diseaseId: typeId,
-            diseaseName: dataType.name,
-            data: typeResults,
-            columns: searchResults.columns || [],
-            totalCount: searchResults.total || typeResults.length,
-            loading: isPaginationOnly,
-            pagination: pagination,
-            onPaginationChange: handlePaginationChange,
-            sorting: sorting,
-            onSortingChange: handleSortingChange,
-            searchFilters: {
-              diseases: filters.diseases,
-              query: filters.query || undefined,
-              metadata: baseQuery.metadata,
-              columnFilters: baseQuery.columnFilters
-            },
-            endpoint: '/api/search/unified',
-          };
-        }).filter(Boolean);
-
-        setDiseasesData(groupedResults);
-      } else {
-        setDiseasesData([]);
-      }
+      setResults(prev => ({
+        ...prev,
+        [dataTypeId]: {
+          data: response.data.results,
+          total: response.data.total,
+          loading: false,
+          collapsed: prev[dataTypeId]?.collapsed || false,
+          pagination: { pageIndex, pageSize },
+          sorting,
+        }
+      }));
     } catch (error) {
-      console.error('Unified search failed:', error);
-      setDiseasesData([]);
-    } finally {
-      setLoading(false);
-      setIsPaginating(false);
+      console.error(`Error fetching ${dataTypeId}:`, error);
+      setResults(prev => ({
+        ...prev,
+        [dataTypeId]: {
+          data: [],
+          total: 0,
+          loading: false,
+          collapsed: prev[dataTypeId]?.collapsed || false,
+          pagination: { pageIndex, pageSize },
+          sorting,
+        }
+      }));
     }
-  }, [pagination, sorting, activeDataTypes, availableDataTypes, filters, handlePaginationChange, handleSortingChange]);
+  }, [selectedDiseases, searchQuery]);
 
-  // Effect for pagination changes only
+  // Initialize all data types when filters change
   useEffect(() => {
-    if (skipPaginationEffect) {
-      // Skip this effect when sorting changes (to prevent double search)
-      setSkipPaginationEffect(false);
-      return;
-    }
-    
-    if (hasSearched && lastSearchQuery) {
-      // Just pagination changed, use cached query
-      executeSearch(lastSearchQuery, true);
-    }
-  }, [pagination.pageIndex, pagination.pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Effect for sorting changes
-  useEffect(() => {
-    if (hasSearched && lastSearchQuery) {
-      // Sorting changed, needs full re-query but use cached base query
-      executeSearch(lastSearchQuery, false);
-    }
-  }, [sorting]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Unified search using the new endpoint
-  const searchUnified = useCallback(async () => {
-    const baseQuery = buildSearchQuery();
-    
-    if (!baseQuery) {
-      setDiseasesData([]);
-      setHasSearched(false);
-      setLastSearchQuery(null);
+    if (selectedDiseases.length === 0) {
+      setResults({});
       return;
     }
 
-    // Cache the query for pagination
-    setLastSearchQuery(baseQuery);
-    
-    // Execute the search
-    await executeSearch(baseQuery, false);
-  }, [buildSearchQuery, executeSearch]);
+    setLoading(true);
+    Promise.all(
+      DATA_TYPE_CONFIGS.map(config => fetchDataType(config.id, 0, 20, []))
+    ).finally(() => setLoading(false));
+  }, [selectedDiseases, searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-search when filters change (with debounce)
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      searchUnified();
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchUnified]);
-
-  const handleDiseasesChange = useCallback((selectedDiseases: string[]) => {
-    setFilters(prev => ({ ...prev, diseases: selectedDiseases }));
-    setPagination({ pageIndex: 0, pageSize: 50 }); // Reset to first page
-  }, []);
-
-  const handleQueryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setFilters(prev => ({ ...prev, query: e.target.value }));
-    setPagination({ pageIndex: 0, pageSize: 50 }); // Reset to first page
-  }, []);
-
-  const handleAdvancedQueryChange = useCallback((query: QueryGroup) => {
-    setFilters(prev => ({ ...prev, advancedQuery: query }));
-    setPagination({ pageIndex: 0, pageSize: 50 }); // Reset to first page
-  }, []);
-
-  const handleQueryBuilderValidChange = useCallback((isValid: boolean) => {
-    setQueryBuilderValid(isValid);
-  }, []);
-
-  const toggleSearchMode = useCallback(() => {
-    setIsAdvancedMode(prev => !prev);
-    // Clear opposite mode's data when switching and reset results
-    if (!isAdvancedMode) {
-      setFilters(prev => ({ ...prev, query: '' }));
-    } else {
-      setFilters(prev => ({ ...prev, advancedQuery: undefined }));
+  const handleCardClick = (dataTypeId: string) => {
+    const element = document.getElementById(`section-${dataTypeId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-    // Reset search state
-    setDiseasesData([]);
-    setHasSearched(false);
-  }, [isAdvancedMode]);
+  };
 
-  const handleRowClick = useCallback((row: any, dataType: string) => {
-    console.log(`Row clicked in ${dataType}:`, row);
-    // Future: Open detailed view modal
-    if (row.url) {
-      window.open(row.url, '_blank');
-    }
-  }, []);
+  const toggleCollapse = (dataTypeId: string) => {
+    setResults(prev => ({
+      ...prev,
+      [dataTypeId]: {
+        ...(prev[dataTypeId] || { data: [], total: 0, loading: false, pagination: { pageIndex: 0, pageSize: 20 }, sorting: [] }),
+        collapsed: !prev[dataTypeId]?.collapsed,
+      }
+    }));
+  };
 
-  const handleExpandedContent = useCallback((row: any, dataType: string) => {
-    return (
-      <div className="expanded-row-content">
-        <div className="expanded-header">
-          <h4>{dataType.charAt(0).toUpperCase() + dataType.slice(1)} Details</h4>
-          <span className="data-type-badge">{dataType}</span>
-        </div>
-        
-        <div className="expanded-body">
-          <div className="basic-info">
-            <p><strong>ID:</strong> {row.id}</p>
-            <p><strong>Source:</strong> {row.source}</p>
-            <p><strong>Last Updated:</strong> {new Date(row.last_updated).toLocaleDateString()}</p>
-          </div>
-          
-          {row.summary && (
-            <div className="summary-section">
-              <h5>Summary</h5>
-              <p>{row.summary}</p>
-            </div>
-          )}
-          
-          {row.diseases && row.diseases.length > 0 && (
-            <div className="diseases-section">
-              <h5>Related Diseases</h5>
-              <div className="disease-tags">
-                {row.diseases.map((disease: string, idx: number) => (
-                  <span key={idx} className="disease-tag">{disease}</span>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          <div className="metadata-section">
-            <h5>Additional Data</h5>
-            <div className="metadata-grid">
-              {Object.entries(row.metadata).slice(0, 6).map(([key, value]) => (
-                <div key={key} className="metadata-item">
-                  <label>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
-                  <span>{Array.isArray(value) ? value.join(', ') : String(value)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }, []);
+  const handleExport = (dataTypeId: string) => {
+    const typeResults = results[dataTypeId];
+    if (!typeResults || typeResults.data.length === 0) return;
+
+    const config = DATA_TYPE_CONFIGS.find(c => c.id === dataTypeId);
+    if (!config) return;
+
+    // Build CSV
+    const headers = config.columns.map(col => col.label);
+    const rows = typeResults.data.map(row => {
+      return config.columns.map(col => {
+        const keys = col.key.split('.');
+        let value: any = row;
+        for (const key of keys) {
+          value = value?.[key];
+        }
+        if (Array.isArray(value)) {
+          return `"${value.slice(0, 3).join(', ')}"`;
+        }
+        if (typeof value === 'string' && value.includes(',')) {
+          return `"${value}"`;
+        }
+        return value ?? '';
+      });
+    });
+
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${dataTypeId}-export-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="disease-data-by-type">
@@ -419,116 +275,42 @@ const DiseaseDataByType: React.FC = () => {
       </header>
 
       <div className="search-controls">
-        {/* Search Mode Toggle */}
-        <div className="search-mode-toggle">
-          <button
-            className={`mode-button ${!isAdvancedMode ? 'active' : ''}`}
-            onClick={() => !isAdvancedMode || toggleSearchMode()}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+        <div className="search-row">
+          <div className="search-input-wrapper">
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search across all medical data..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <svg className="search-icon" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
-            Simple Search
-          </button>
-          <button
-            className={`mode-button ${isAdvancedMode ? 'active' : ''}`}
-            onClick={() => isAdvancedMode || toggleSearchMode()}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/>
-            </svg>
-            Advanced Query Builder
-          </button>
+          </div>
+
+          <DiseaseSelector
+            selectedDiseases={selectedDiseases}
+            onDiseasesChange={setSelectedDiseases}
+          />
         </div>
 
-        {/* Simple Search Row */}
-        {!isAdvancedMode && (
-          <div className="search-row">
-            <div className="search-input-wrapper">
-              <input
-                type="text"
-                className="search-input"
-                placeholder="Search across all medical data..."
-                value={filters.query}
-                onChange={handleQueryChange}
-              />
-              <svg className="search-icon" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-              </svg>
-            </div>
-
-            <DiseaseSelector
-              selectedDiseases={filters.diseases}
-              onDiseasesChange={handleDiseasesChange}
-            />
-          </div>
-        )}
-
-        {/* Advanced Query Builder */}
-        {isAdvancedMode && (
-          <div className="advanced-search-section">
-            <div className="disease-selector-row">
-              <DiseaseSelector
-                selectedDiseases={filters.diseases}
-                onDiseasesChange={handleDiseasesChange}
-              />
-            </div>
-            <QueryBuilder
-              value={filters.advancedQuery}
-              onChange={handleAdvancedQueryChange}
-              onValidChange={handleQueryBuilderValidChange}
-              sourceCategory={activeDataTypes.length === 1 ? activeDataTypes[0] : undefined}
-              className="main-query-builder"
-            />
-          </div>
-        )}
-
-        {/* Data Type Selector */}
-        <div className="data-type-selector">
-          <span className="selector-label">Show data from:</span>
-          <div className="data-type-toggles">
-            {availableDataTypes.map(dataType => (
-              <button
-                key={dataType.id}
-                className={`data-type-toggle ${activeDataTypes.includes(dataType.id) ? 'active' : ''}`}
-                style={{
-                  borderColor: dataType.color,
-                  backgroundColor: activeDataTypes.includes(dataType.id) ? dataType.color : 'transparent',
-                  color: activeDataTypes.includes(dataType.id) ? 'white' : dataType.color
-                }}
-                onClick={() => {
-                  if (activeDataTypes.includes(dataType.id)) {
-                    // Don't allow removing if it's the last one
-                    if (activeDataTypes.length > 1) {
-                      setActiveDataTypes(prev => prev.filter(id => id !== dataType.id));
-                    }
-                  } else {
-                    setActiveDataTypes(prev => [...prev, dataType.id]);
-                  }
-                }}
-              >
-                {dataType.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {filters.diseases.length > 0 && (
+        {selectedDiseases.length > 0 && (
           <div className="active-filters">
             <span className="filter-label">Diseases:</span>
-            {filters.diseases.map(disease => (
+            {selectedDiseases.map(disease => (
               <span key={disease} className="filter-tag">
                 {disease}
-                <button 
-                  onClick={() => handleDiseasesChange(filters.diseases.filter(d => d !== disease))}
+                <button
+                  onClick={() => setSelectedDiseases(selectedDiseases.filter(d => d !== disease))}
                   className="remove-filter"
                 >
                   ×
                 </button>
               </span>
             ))}
-            <button 
-              onClick={() => handleDiseasesChange([])}
+            <button
+              onClick={() => setSelectedDiseases([])}
               className="clear-all-filters"
             >
               Clear All
@@ -537,45 +319,116 @@ const DiseaseDataByType: React.FC = () => {
         )}
       </div>
 
-      {(loading || isPaginating) && (
-        <div className="loading-state">
-          <div className="loading-spinner"></div>
-          <p>{isPaginating ? 'Loading page...' : 'Searching across all data sources...'}</p>
-        </div>
-      )}
-
-      {!loading && !isPaginating && hasSearched && diseasesData.length === 0 && (
+      {selectedDiseases.length === 0 && (
         <div className="empty-state">
           <div className="empty-icon">📊</div>
-          <h3>No Results Found</h3>
-          <p>
-            {filters.diseases.length === 0 
-              ? "Please select at least one disease to begin searching."
-              : "Try adjusting your search criteria or selecting different diseases."
-            }
-          </p>
+          <h3>Select Diseases to Begin</h3>
+          <p>Choose one or more diseases from the selector above to search across all data sources.</p>
         </div>
       )}
 
-      {!loading && diseasesData.length > 0 && (
-        <div className="results-summary">
-          <h3>Search Results</h3>
-          <p>
-            Found data across {diseasesData.length} data type{diseasesData.length > 1 ? 's' : ''} for{' '}
-            {filters.diseases.length} selected disease{filters.diseases.length > 1 ? 's' : ''}
-            {filters.query && (
-              <span> matching "{filters.query}"</span>
-            )}
-          </p>
-        </div>
-      )}
+      {selectedDiseases.length > 0 && (
+        <>
+          {/* Summary Cards */}
+          <div className="summary-cards">
+            {DATA_TYPE_CONFIGS.map(config => (
+              <div
+                key={config.id}
+                className={`summary-card ${counts[config.id] === 0 ? 'disabled' : ''}`}
+                style={{ borderLeftColor: config.color }}
+                onClick={() => counts[config.id] > 0 && handleCardClick(config.id)}
+              >
+                <div className="card-icon">{config.icon}</div>
+                <div className="card-content">
+                  <h3>{config.name}</h3>
+                  <p className="card-count">
+                    {loading ? '...' : counts[config.id].toLocaleString()}
+                    <span className="card-label"> results</span>
+                  </p>
+                </div>
+                <button
+                  className={`card-toggle ${results[config.id]?.collapsed ? 'collapsed' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCollapse(config.id);
+                  }}
+                  aria-label={results[config.id]?.collapsed ? 'Expand' : 'Collapse'}
+                >
+                  {results[config.id]?.collapsed ? '▼' : '▲'}
+                </button>
+              </div>
+            ))}
+          </div>
 
-      {diseasesData.length > 0 && (
-        <MultiDiseaseDataTables
-          diseases={diseasesData}
-          onRowClick={handleRowClick}
-          expandedRowContent={handleExpandedContent}
-        />
+          {/* Table Sections */}
+          <div className="table-sections">
+            {DATA_TYPE_CONFIGS.map(config => {
+              const typeResults = results[config.id];
+              if (!typeResults || counts[config.id] === 0) return null;
+
+              return (
+                <div
+                  key={config.id}
+                  id={`section-${config.id}`}
+                  className="table-section"
+                >
+                  <div className="section-header" style={{ borderLeftColor: config.color }}>
+                    <div className="section-title">
+                      <span className="section-icon">{config.icon}</span>
+                      <h2>{config.name}</h2>
+                      <span className="result-count">{typeResults.total.toLocaleString()}</span>
+                    </div>
+                    <div className="section-actions">
+                      <button
+                        className="export-btn"
+                        onClick={() => handleExport(config.id)}
+                        disabled={typeResults.data.length === 0}
+                      >
+                        Export CSV
+                      </button>
+                      <button
+                        className={`collapse-btn ${typeResults.collapsed ? 'collapsed' : ''}`}
+                        onClick={() => toggleCollapse(config.id)}
+                        aria-label={typeResults.collapsed ? 'Expand' : 'Collapse'}
+                      >
+                        {typeResults.collapsed ? '▼' : '▲'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {!typeResults.collapsed && (
+                    <div className="section-content">
+                      <DynamicDataTable
+                        data={typeResults.data}
+                        columns={config.columns}
+                        loading={typeResults.loading}
+                        totalCount={typeResults.total}
+                        pagination={typeResults.pagination}
+                        onPaginationChange={(newPagination) => {
+                          fetchDataType(
+                            config.id,
+                            newPagination.pageIndex,
+                            newPagination.pageSize,
+                            typeResults.sorting
+                          );
+                        }}
+                        sorting={typeResults.sorting}
+                        onSortingChange={(newSorting) => {
+                          fetchDataType(
+                            config.id,
+                            0,
+                            typeResults.pagination.pageSize,
+                            newSorting
+                          );
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
