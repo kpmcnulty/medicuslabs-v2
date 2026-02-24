@@ -27,7 +27,7 @@ class HealthUnlockedScraper(BaseScraper):
             return []
 
         # Get max results from kwargs
-        max_results = kwargs.get('max_results', 50)
+        max_results = kwargs.get('max_results') or 50
 
         # Build search URL
         encoded_term = quote_plus(disease_term)

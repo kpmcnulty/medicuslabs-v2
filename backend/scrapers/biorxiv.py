@@ -63,7 +63,7 @@ class BioRxivScraper(BaseScraper):
                     all_results.extend(filtered)
 
                     # Check if we have more pages
-                    total = data.get('messages', [{}])[0].get('total', 0)
+                    total = int(data.get('messages', [{}])[0].get('total', 0))
                     if cursor + page_size >= total:
                         break
 

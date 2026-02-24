@@ -26,7 +26,7 @@ class StackExchangeHealthScraper(BaseScraper):
             return []
 
         # Get max results from kwargs
-        max_results = kwargs.get('max_results', 100)
+        max_results = kwargs.get('max_results') or 100
 
         results = []
 
