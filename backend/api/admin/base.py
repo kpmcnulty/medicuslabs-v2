@@ -88,13 +88,6 @@ async def health_check() -> Dict[str, Any]:
         health_status["checks"]["database"] = f"error: {str(e)}"
         health_status["status"] = "unhealthy"
     
-    # Check Redis (if we have redis client)
-    try:
-        from core.redis_client import redis_client
-        await redis_client.ping()
-        health_status["checks"]["redis"] = "ok"
-    except Exception as e:
-        health_status["checks"]["redis"] = f"error: {str(e)}"
-        health_status["status"] = "degraded"
+    # Redis removed in cleanup
     
     return health_status

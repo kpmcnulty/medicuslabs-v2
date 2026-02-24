@@ -411,19 +411,21 @@ async def trigger_source_scrape(
             })
         )
         
-        # Import and trigger the appropriate task
-        from tasks.scrapers import scrape_reddit, scrape_pubmed, scrape_clinicaltrials
+        # Import scraper classes directly
+        from scrapers.clinicaltrials import ClinicalTrialsScraper
+        from scrapers.pubmed import PubMedScraper
+        from scrapers.reddit import RedditScraper
+        from scrapers.faers import FAERSScraper
         
-        # Map scraper types to tasks
-        task_map = {
-            'reddit_scraper': scrape_reddit,
-            'pubmed_api': scrape_pubmed,
-            'clinicaltrials_api': scrape_clinicaltrials
+        scraper_map = {
+            'reddit_scraper': RedditScraper,
+            'pubmed_api': PubMedScraper,
+            'clinicaltrials_api': ClinicalTrialsScraper,
+            'faers_api': FAERSScraper,
         }
         
-        task = task_map.get(source['scraper_type'])
-        if not task:
-            # Cancel the job
+        scraper_class = scraper_map.get(source['scraper_type'])
+        if not scraper_class:
             await conn.execute("""
                 UPDATE crawl_jobs 
                 SET status = 'failed', 
@@ -431,36 +433,31 @@ async def trigger_source_scrape(
                     error_details = $2
                 WHERE id = $1
             """, job_id, json.dumps([{
-                "error": f"No task handler for scraper type: {source['scraper_type']}",
+                "error": f"No scraper for type: {source['scraper_type']}",
                 "timestamp": datetime.now().isoformat()
             }]))
-            
-            raise HTTPException(
-                status_code=400,
-                detail=f"No task handler for scraper type: {source['scraper_type']}"
-            )
+            raise HTTPException(status_code=400, detail=f"No scraper for type: {source['scraper_type']}")
         
-        # Launch task
-        task_params = {
-            "disease_ids": disease_ids,
-            "disease_names": disease_names,
-            "job_id": job_id,
-            "source_id": source_id,
-            "source_name": source['name'],
-            **(request.options or {})
-        }
-        
-        result = task.delay(**task_params)
+        # Run scraper in background
+        from api.scrapers import run_scraper_task
+        import asyncio
+        asyncio.create_task(run_scraper_task(
+            scraper_class=scraper_class,
+            disease_names=disease_names,
+            job_id=job_id,
+            source_id=source_id,
+            source_name=source['name'],
+            options=request.options or {}
+        ))
         
         return {
             "job_id": job_id,
-            "task_id": result.id,
             "message": f"Scraping job started for {source['name']}",
             "details": {
                 "source_id": source_id,
                 "source_name": source['name'],
                 "association_method": source['association_method'],
                 "disease_count": len(disease_ids),
-                "diseases": disease_names[:5]  # Show first 5
+                "diseases": disease_names[:5]
             }
         }
