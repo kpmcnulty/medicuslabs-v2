@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Column } from '@tanstack/react-table';
 import './ColumnFilterMenu.css';
 
@@ -312,11 +313,11 @@ export const ColumnFilterMenu: React.FC<ColumnFilterMenuProps> = ({ column, colu
         </svg>
       </button>
 
-      {isOpen && (
+      {isOpen && createPortal(
         <div 
           ref={menuRef} 
           className={`filter-menu-dropdown position-${menuPosition}`}
-          style={{ zIndex: 9999 }}
+          style={{ zIndex: 9999, position: 'absolute' }}
         >
           <div className="filter-menu-header">
             <h4>Filter: {columnConfig?.label || column.id}</h4>
@@ -403,7 +404,8 @@ export const ColumnFilterMenu: React.FC<ColumnFilterMenuProps> = ({ column, colu
               Apply
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
