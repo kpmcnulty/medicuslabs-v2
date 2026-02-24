@@ -224,6 +224,9 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                     field_ref = "s.name"
                 elif col_id == "source_category":
                     field_ref = "s.category"
+                elif col_id == "created_date":
+                    # Use source_updated_at as the unified, always-clean date
+                    field_ref = "d.source_updated_at::date"
                 elif col_id == "diseases":
                     # Special handling for diseases array
                     if op == "contains":
@@ -273,8 +276,13 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
                     param_count += 1
                 elif op in ("before", "after"):
                     cmp = "<" if op == "before" else ">"
-                    col_conditions.append(f"{field_ref}::date {cmp} ${param_count}::date")
-                    params.append(val)
+                    from datetime import date as date_type
+                    try:
+                        date_val = date_type.fromisoformat(str(val))
+                    except (ValueError, TypeError):
+                        continue
+                    col_conditions.append(f"{field_ref} {cmp} ${param_count}")
+                    params.append(date_val)
                     param_count += 1
                 elif op == "blank":
                     col_conditions.append(f"({field_ref} IS NULL OR {field_ref} = '')")
@@ -291,8 +299,8 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
     # Sorting
     if search_query.sort_by == "relevance" and search_query.q:
         sql += " ORDER BY rank DESC, created_at DESC"
-    elif search_query.sort_by == "date":
-        sql += f" ORDER BY created_at {search_query.sort_order.upper()}"
+    elif search_query.sort_by in ("date", "created_date"):
+        sql += f" ORDER BY source_updated_at {search_query.sort_order.upper()} NULLS LAST"
     elif search_query.sort_by == "source":
         sql += f" ORDER BY source_name {search_query.sort_order.upper()}"
     elif search_query.sort_by == "title":
