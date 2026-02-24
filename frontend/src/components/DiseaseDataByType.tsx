@@ -92,6 +92,7 @@ interface DataTypeResults {
   collapsed: boolean;
   pagination: { pageIndex: number; pageSize: number };
   sorting: any[];
+  columnFilters: any[];
 }
 
 const DiseaseDataByType: React.FC = () => {
@@ -138,17 +139,19 @@ const DiseaseDataByType: React.FC = () => {
     dataTypeId: string,
     pageIndex: number = 0,
     pageSize: number = 20,
-    sorting: any[] = []
+    sorting: any[] = [],
+    columnFilters: any[] = []
   ) => {
     if (selectedDiseases.length === 0) return;
 
     setResults(prev => ({
       ...prev,
       [dataTypeId]: {
-        ...(prev[dataTypeId] || { data: [], total: 0, collapsed: false }),
+        ...(prev[dataTypeId] || { data: [], total: 0, collapsed: false, columnFilters: [] }),
         loading: true,
         pagination: { pageIndex, pageSize },
         sorting,
+        columnFilters,
       }
     }));
 
@@ -170,6 +173,14 @@ const DiseaseDataByType: React.FC = () => {
         query.sort_order = sorting[0].desc ? 'desc' : 'asc';
       }
 
+      // Convert column filters to API format
+      if (columnFilters.length > 0) {
+        query.columnFilters = columnFilters.map((f: any) => ({
+          id: f.id,
+          value: f.value,
+        }));
+      }
+
       const response = await api.post('/api/search/unified', query);
 
       setResults(prev => ({
@@ -181,6 +192,7 @@ const DiseaseDataByType: React.FC = () => {
           collapsed: prev[dataTypeId]?.collapsed || false,
           pagination: { pageIndex, pageSize },
           sorting,
+          columnFilters,
         }
       }));
     } catch (error) {
@@ -194,6 +206,7 @@ const DiseaseDataByType: React.FC = () => {
           collapsed: prev[dataTypeId]?.collapsed || false,
           pagination: { pageIndex, pageSize },
           sorting,
+          columnFilters,
         }
       }));
     }
@@ -211,13 +224,6 @@ const DiseaseDataByType: React.FC = () => {
       DATA_TYPE_CONFIGS.map(config => fetchDataType(config.id, 0, 20, []))
     ).finally(() => setLoading(false));
   }, [selectedDiseases, searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleCardClick = (dataTypeId: string) => {
-    const element = document.getElementById(`section-${dataTypeId}`);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
 
   const toggleCollapse = (dataTypeId: string) => {
     setResults(prev => ({
@@ -450,7 +456,8 @@ const DiseaseDataByType: React.FC = () => {
                             config.id,
                             newPagination.pageIndex,
                             newPagination.pageSize,
-                            typeResults.sorting
+                            typeResults.sorting,
+                            typeResults.columnFilters
                           );
                         }}
                         sorting={typeResults.sorting}
@@ -459,7 +466,18 @@ const DiseaseDataByType: React.FC = () => {
                             config.id,
                             0,
                             typeResults.pagination.pageSize,
-                            newSorting
+                            newSorting,
+                            typeResults.columnFilters
+                          );
+                        }}
+                        columnFilters={typeResults.columnFilters}
+                        onColumnFiltersChange={(newFilters) => {
+                          fetchDataType(
+                            config.id,
+                            0,
+                            typeResults.pagination.pageSize,
+                            typeResults.sorting,
+                            newFilters
                           );
                         }}
                       />

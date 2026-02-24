@@ -196,6 +196,95 @@ async def build_search_query(search_query: UnifiedSearchQuery) -> tuple[str, lis
             sql += f" AND {metadata_sql}"
             params.extend(metadata_params)
 
+    # Process column filters from table UI
+    if search_query.columnFilters:
+        for cf in search_query.columnFilters:
+            col_id = cf.get("id", "")
+            filter_val = cf.get("value", {})
+            if not filter_val or not isinstance(filter_val, dict):
+                continue
+            
+            conditions = filter_val.get("conditions", [])
+            join_op = filter_val.get("joinOperator", "AND")
+            
+            col_conditions = []
+            for cond in conditions:
+                op = cond.get("operator", "contains")
+                val = cond.get("value", "")
+                if val == "" and op not in ("blank", "notBlank"):
+                    continue
+                
+                # Determine if this is a metadata field or base field
+                if col_id.startswith("metadata."):
+                    json_field = col_id.replace("metadata.", "")
+                    field_ref = f"d.doc_metadata->>'{json_field}'"
+                elif col_id == "title":
+                    field_ref = "d.title"
+                elif col_id == "source":
+                    field_ref = "s.name"
+                elif col_id == "source_category":
+                    field_ref = "s.category"
+                elif col_id == "diseases":
+                    # Special handling for diseases array
+                    if op == "contains":
+                        sql += f""" AND EXISTS (
+                            SELECT 1 FROM document_diseases dd2
+                            JOIN diseases dis2 ON dd2.disease_id = dis2.id
+                            WHERE dd2.document_id = d.id
+                            AND dis2.name ILIKE ${param_count}
+                        )"""
+                        params.append(f"%{val}%")
+                        param_count += 1
+                    continue
+                else:
+                    field_ref = f"d.{col_id}"
+                
+                if op == "contains":
+                    col_conditions.append(f"{field_ref} ILIKE ${param_count}")
+                    params.append(f"%{val}%")
+                    param_count += 1
+                elif op == "equals":
+                    col_conditions.append(f"{field_ref} = ${param_count}")
+                    params.append(str(val))
+                    param_count += 1
+                elif op == "notEqual":
+                    col_conditions.append(f"{field_ref} != ${param_count}")
+                    params.append(str(val))
+                    param_count += 1
+                elif op == "startsWith":
+                    col_conditions.append(f"{field_ref} ILIKE ${param_count}")
+                    params.append(f"{val}%")
+                    param_count += 1
+                elif op == "endsWith":
+                    col_conditions.append(f"{field_ref} ILIKE ${param_count}")
+                    params.append(f"%{val}")
+                    param_count += 1
+                elif op == "notContains":
+                    col_conditions.append(f"{field_ref} NOT ILIKE ${param_count}")
+                    params.append(f"%{val}%")
+                    param_count += 1
+                elif op == "greaterThan":
+                    col_conditions.append(f"({field_ref})::numeric > ${param_count}::numeric")
+                    params.append(val)
+                    param_count += 1
+                elif op == "lessThan":
+                    col_conditions.append(f"({field_ref})::numeric < ${param_count}::numeric")
+                    params.append(val)
+                    param_count += 1
+                elif op in ("before", "after"):
+                    cmp = "<" if op == "before" else ">"
+                    col_conditions.append(f"{field_ref}::date {cmp} ${param_count}::date")
+                    params.append(val)
+                    param_count += 1
+                elif op == "blank":
+                    col_conditions.append(f"({field_ref} IS NULL OR {field_ref} = '')")
+                elif op == "notBlank":
+                    col_conditions.append(f"({field_ref} IS NOT NULL AND {field_ref} != '')")
+            
+            if col_conditions:
+                joined = f" {join_op} ".join(col_conditions)
+                sql += f" AND ({joined})"
+
     sql += ")"
     sql += "\n        SELECT * FROM search_results\n"
 
