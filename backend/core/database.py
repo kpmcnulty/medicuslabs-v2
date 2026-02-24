@@ -49,7 +49,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 # Direct asyncpg connection for bulk operations
 @asynccontextmanager
 async def get_pg_connection():
-    conn = await asyncpg.connect(settings.database_url)
+    conn = await asyncpg.connect(settings.database_url, ssl=False)
     try:
         yield conn
     finally:
