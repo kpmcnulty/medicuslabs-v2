@@ -26,7 +26,7 @@ from scrapers.stackexchange_health import StackExchangeHealthScraper
 from scrapers.biorxiv import BioRxivScraper
 from scrapers.openfda import OpenFDAScraper
 from scrapers.who_don import WHODiseaseOutbreakNewsScraper
-from scrapers.wikipedia import WikipediaScraper
+from scrapers.semantic_scholar import SemanticScholarScraper
 from scrapers.drugscom import DrugsComScraper
 
 router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
@@ -125,8 +125,8 @@ async def trigger_scrape(
         "openfda drug labels": OpenFDAScraper,
         "who disease outbreak news": WHODiseaseOutbreakNewsScraper,
         "who don": WHODiseaseOutbreakNewsScraper,
-        "wikipedia": WikipediaScraper,
-        "wikipedia medical": WikipediaScraper,
+        "semantic scholar": SemanticScholarScraper,
+        "semanticscholar": SemanticScholarScraper,
         "drugs.com": DrugsComScraper,
         "drugscom": DrugsComScraper,
     }

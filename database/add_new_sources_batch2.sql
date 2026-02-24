@@ -66,17 +66,17 @@ ON CONFLICT (name) DO UPDATE SET
     config = EXCLUDED.config,
     updated_at = CURRENT_TIMESTAMP;
 
--- 4. Wikipedia Medical
+-- 4. Semantic Scholar
 INSERT INTO sources (name, category, base_url, scraper_type, rate_limit, is_active, association_method, config)
 VALUES (
-    'Wikipedia Medical',
+    'Semantic Scholar',
     'publications',
-    'https://en.wikipedia.org/api/rest_v1',
-    'wikipedia',
+    'https://api.semanticscholar.org',
+    'semantic_scholar',
     1.0,
     true,
     'search',
-    '{"description": "Wikipedia medical reference articles", "update_window_hours": 168}'::jsonb
+    '{"description": "Academic papers with citation metrics", "update_window_hours": 168}'::jsonb
 )
 ON CONFLICT (name) DO UPDATE SET
     category = EXCLUDED.category,
