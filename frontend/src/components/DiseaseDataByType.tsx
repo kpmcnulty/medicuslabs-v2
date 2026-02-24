@@ -98,6 +98,13 @@ interface DataTypeResults {
 const DiseaseDataByType: React.FC = () => {
   const [selectedDiseases, setSelectedDiseases] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   const [counts, setCounts] = useState<Record<string, number>>({
     publications: 0,
     trials: 0,
@@ -118,7 +125,7 @@ const DiseaseDataByType: React.FC = () => {
       try {
         const params = new URLSearchParams();
         params.set('diseases', selectedDiseases.join(','));
-        if (searchQuery.trim()) {
+        if (debouncedQuery.trim()) {
           params.set('q', searchQuery.trim());
         }
 
@@ -132,7 +139,7 @@ const DiseaseDataByType: React.FC = () => {
 
     const timeoutId = setTimeout(fetchCounts, 300);
     return () => clearTimeout(timeoutId);
-  }, [selectedDiseases, searchQuery]);
+  }, [selectedDiseases, debouncedQuery]);
 
   // Fetch data for a specific data type
   const fetchDataType = useCallback(async (
@@ -163,8 +170,8 @@ const DiseaseDataByType: React.FC = () => {
         offset: pageIndex * pageSize,
       };
 
-      if (searchQuery.trim()) {
-        query.q = searchQuery.trim();
+      if (debouncedQuery.trim()) {
+        query.q = debouncedQuery.trim();
       }
 
       // Add sorting
@@ -210,7 +217,7 @@ const DiseaseDataByType: React.FC = () => {
         }
       }));
     }
-  }, [selectedDiseases, searchQuery]);
+  }, [selectedDiseases, debouncedQuery]);
 
   // Initialize all data types when filters change
   useEffect(() => {
@@ -223,7 +230,7 @@ const DiseaseDataByType: React.FC = () => {
     Promise.all(
       DATA_TYPE_CONFIGS.map(config => fetchDataType(config.id, 0, 20, []))
     ).finally(() => setLoading(false));
-  }, [selectedDiseases, searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedDiseases, debouncedQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCollapse = (dataTypeId: string) => {
     setResults(prev => ({
@@ -246,7 +253,7 @@ const DiseaseDataByType: React.FC = () => {
       limit: Math.min(typeResults.total, 10000), // Cap at 10k
       offset: 0,
     };
-    if (searchQuery.trim()) query.q = searchQuery.trim();
+    if (debouncedQuery.trim()) query.q = debouncedQuery.trim();
     if (typeResults.columnFilters?.length > 0) {
       query.columnFilters = typeResults.columnFilters.map((f: any) => ({ id: f.id, value: f.value }));
     }
