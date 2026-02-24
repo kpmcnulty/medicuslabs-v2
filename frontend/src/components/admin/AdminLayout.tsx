@@ -39,12 +39,6 @@ const AdminLayout: React.FC = () => {
             <li className={isActive('/admin/diseases')}>
               <Link to="/admin/diseases">Diseases</Link>
             </li>
-            <li className={isActive('/admin/jobs')}>
-              <Link to="/admin/jobs">Crawl Jobs</Link>
-            </li>
-            <li className={isActive('/admin/schedules')}>
-              <Link to="/admin/schedules">Schedules</Link>
-            </li>
           </ul>
         </nav>
 
