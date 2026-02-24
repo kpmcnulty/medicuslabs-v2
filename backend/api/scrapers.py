@@ -39,13 +39,20 @@ async def run_scraper_task(
     try:
         logger.info(f"Starting scraper task for {source_name}, job {job_id}")
 
-        # Initialize scraper
-        scraper = scraper_class()
+        # Initialize scraper with source_id
+        scraper = scraper_class(source_id=source_id)
 
-        # Run scraper for each disease
-        for disease in disease_names:
-            logger.info(f"Scraping {source_name} for disease: {disease}")
-            await scraper.scrape(disease_term=disease, **options)
+        # Get disease IDs from names
+        from core.database import get_pg_connection
+        async with get_pg_connection() as conn:
+            disease_rows = await conn.fetch(
+                "SELECT id, name FROM diseases WHERE name = ANY($1)", disease_names
+            )
+            disease_ids = [r['id'] for r in disease_rows]
+            disease_name_list = [r['name'] for r in disease_rows]
+
+        logger.info(f"Scraping {source_name} for diseases: {disease_name_list}")
+        await scraper.scrape(disease_ids=disease_ids, disease_names=disease_name_list, **options)
 
         # Update job status to completed
         from core.database import async_session_maker
@@ -70,7 +77,7 @@ async def run_scraper_task(
             await db.execute(
                 text("""
                     UPDATE crawl_jobs
-                    SET status = 'failed', completed_at = :completed_at, error = :error
+                    SET status = 'failed', completed_at = :completed_at, error_details = :error
                     WHERE id = :job_id
                 """),
                 {"job_id": job_id, "completed_at": datetime.now(), "error": str(e)}
@@ -222,14 +229,14 @@ async def list_sources(db: AsyncSession = Depends(get_db)):
         SELECT
             s.id,
             s.name,
-            s.type,
+            
             s.base_url,
             s.config,
             s.is_active,
             s.last_crawled,
             s.category,
             s.rate_limit,
-            s.requires_auth,
+            
             s.scraper_type,
             s.created_at,
             s.updated_at,
@@ -248,14 +255,14 @@ async def list_sources(db: AsyncSession = Depends(get_db)):
         source_dict = {
             "id": row.id,
             "name": row.name,
-            "type": row.type,
+            
             "base_url": row.base_url,
             "config": row.config,
             "is_active": row.is_active,
             "last_crawled": row.last_crawled,
             "category": row.category,
             "rate_limit": row.rate_limit,
-            "requires_auth": row.requires_auth,
+            
             "scraper_type": row.scraper_type,
             "created_at": row.created_at,
             "updated_at": row.updated_at,

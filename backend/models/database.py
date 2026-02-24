@@ -15,6 +15,8 @@ class SourceCategory(str, enum.Enum):
     publications = "publications"
     trials = "trials"
     community = "community"
+    safety = "safety"
+    news = "news"
 
 class DocumentStatus(str, enum.Enum):
     pending = "pending"

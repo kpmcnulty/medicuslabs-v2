@@ -2,10 +2,25 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from loguru import logger
 import feedparser
+import asyncio
 from urllib.parse import quote_plus
 
 from .base import BaseScraper
 from models.schemas import DocumentCreate
+
+try:
+    from googlenewsdecoder import new_decoderv1
+    HAS_DECODER = True
+except ImportError:
+    HAS_DECODER = False
+    logger.warning("googlenewsdecoder not installed - will use RSS snippets only")
+
+try:
+    from newspaper import Article
+    HAS_NEWSPAPER = True
+except ImportError:
+    HAS_NEWSPAPER = False
+    logger.warning("newspaper4k not installed - will use RSS snippets only")
 
 
 class GoogleNewsScraper(BaseScraper):
@@ -45,14 +60,38 @@ class GoogleNewsScraper(BaseScraper):
             results = []
             for entry in feed.entries:
                 # Extract article data
+                google_url = entry.get('link', '')
+                real_url = google_url
+                article_text = ''
+                article_authors = []
+
+                # Decode Google News redirect URL and extract full article
+                if HAS_DECODER and HAS_NEWSPAPER and google_url:
+                    try:
+                        decoded = new_decoderv1(google_url)
+                        if decoded.get('status'):
+                            real_url = decoded['decoded_url']
+                            await self.rate_limiter.acquire()
+                            a = Article(real_url)
+                            a.download()
+                            a.parse()
+                            article_text = a.text or ''
+                            article_authors = a.authors or []
+                            logger.debug(f"Extracted {len(article_text)} chars from {real_url}")
+                    except Exception as e:
+                        logger.debug(f"Could not extract article from {google_url}: {e}")
+
                 article_data = {
                     'title': entry.get('title', ''),
-                    'link': entry.get('link', ''),
+                    'link': real_url,
+                    'google_news_url': google_url,
                     'published': entry.get('published', ''),
                     'published_parsed': entry.get('published_parsed'),
                     'source': entry.get('source', {}).get('title', 'Unknown'),
                     'description': entry.get('summary', ''),
-                    'id': entry.get('id', entry.get('link', ''))
+                    'id': entry.get('id', entry.get('link', '')),
+                    'article_text': article_text,
+                    'article_authors': article_authors,
                 }
                 results.append(article_data)
 
@@ -73,22 +112,14 @@ class GoogleNewsScraper(BaseScraper):
         # Build unique ID from link
         article_id = raw_data.get('id', raw_data.get('link', ''))
 
-        # Build content
-        content_parts = []
-
-        if raw_data.get('title'):
-            content_parts.append(f"TITLE: {raw_data['title']}")
-
-        if raw_data.get('description'):
-            content_parts.append(f"DESCRIPTION: {raw_data['description']}")
-
-        if raw_data.get('source'):
-            content_parts.append(f"SOURCE: {raw_data['source']}")
-
-        content = "\n\n".join(content_parts)
-
-        # Summary is description
-        summary = raw_data.get('description', raw_data.get('title', ''))[:500]
+        # Use full article text if available, otherwise RSS snippet
+        article_text = raw_data.get('article_text', '')
+        if article_text:
+            content = article_text
+            summary = article_text[:500]
+        else:
+            content = raw_data.get('description', raw_data.get('title', ''))
+            summary = content[:500]
 
         # Parse publication date
         published_date = None
@@ -114,8 +145,9 @@ class GoogleNewsScraper(BaseScraper):
         metadata = {
             'publisher': raw_data.get('source', 'Unknown'),
             'published_date': published_date,
-            'google_news_url': raw_data.get('link', ''),
-            'description': raw_data.get('description', ''),
+            'google_news_url': raw_data.get('google_news_url', ''),
+            'authors': raw_data.get('article_authors', []),
+            'has_full_text': bool(article_text),
         }
 
         # Build title
