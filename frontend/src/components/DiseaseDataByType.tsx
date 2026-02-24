@@ -235,80 +235,98 @@ const DiseaseDataByType: React.FC = () => {
     }));
   };
 
-  const handleExport = (dataTypeId: string) => {
+  // Helper: fetch ALL results for a data type (respecting current filters)
+  const fetchAllForExport = async (dataTypeId: string): Promise<any[]> => {
     const typeResults = results[dataTypeId];
-    if (!typeResults || typeResults.data.length === 0) return;
+    if (!typeResults || typeResults.total === 0) return [];
 
+    const query: any = {
+      diseases: selectedDiseases,
+      source_categories: [dataTypeId],
+      limit: Math.min(typeResults.total, 10000), // Cap at 10k
+      offset: 0,
+    };
+    if (searchQuery.trim()) query.q = searchQuery.trim();
+    if (typeResults.columnFilters?.length > 0) {
+      query.columnFilters = typeResults.columnFilters.map((f: any) => ({ id: f.id, value: f.value }));
+    }
+
+    try {
+      const response = await api.post('/api/search/unified', query);
+      return response.data.results || [];
+    } catch {
+      return typeResults.data; // Fallback to current page
+    }
+  };
+
+  // Helper: convert rows to export format
+  const rowsToSheetData = (rows: any[], columns: any[]) => {
+    return rows.map(row => {
+      const obj: any = {};
+      columns.forEach(col => {
+        const keys = col.key.split('.');
+        let value: any = row;
+        for (const key of keys) value = value?.[key];
+        if (Array.isArray(value)) {
+          obj[col.label] = value.map((v: any) => typeof v === 'object' ? (v.name || v.title || JSON.stringify(v)) : v).join('; ');
+        } else if (typeof value === 'object' && value !== null) {
+          obj[col.label] = value.name || value.title || JSON.stringify(value);
+        } else {
+          obj[col.label] = value ?? '';
+        }
+      });
+      return obj;
+    });
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async (dataTypeId: string) => {
     const config = DATA_TYPE_CONFIGS.find(c => c.id === dataTypeId);
     if (!config) return;
 
-    // Build CSV
-    const headers = config.columns.map(col => col.label);
-    const rows = typeResults.data.map(row => {
-      return config.columns.map(col => {
-        const keys = col.key.split('.');
-        let value: any = row;
-        for (const key of keys) {
-          value = value?.[key];
-        }
-        if (Array.isArray(value)) {
-          return `"${value.slice(0, 3).join(', ')}"`;
-        }
-        if (typeof value === 'string' && value.includes(',')) {
-          return `"${value}"`;
-        }
-        return value ?? '';
-      });
-    });
-
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${dataTypeId}-export-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setExporting(true);
+    try {
+      const allRows = await fetchAllForExport(dataTypeId);
+      const sheetData = rowsToSheetData(allRows, config.columns);
+      
+      const ws = XLSX.utils.json_to_sheet(sheetData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, config.name.substring(0, 31));
+      
+      const dateStr = new Date().toISOString().split('T')[0];
+      XLSX.writeFile(wb, `${dataTypeId}-${dateStr}.csv`);
+    } finally {
+      setExporting(false);
+    }
   };
 
-  const handleExportAllXLSX = () => {
-    const wb = XLSX.utils.book_new();
-    let sheetsAdded = 0;
+  const handleExportAllXLSX = async () => {
+    setExporting(true);
+    try {
+      const wb = XLSX.utils.book_new();
+      let sheetsAdded = 0;
 
-    DATA_TYPE_CONFIGS.forEach(config => {
-      const typeResults = results[config.id];
-      if (!typeResults || typeResults.collapsed || typeResults.data.length === 0) return;
+      for (const config of DATA_TYPE_CONFIGS) {
+        const typeResults = results[config.id];
+        if (!typeResults || typeResults.collapsed || typeResults.total === 0) continue;
 
-      const rows = typeResults.data.map(row => {
-        const obj: any = {};
-        config.columns.forEach(col => {
-          const keys = col.key.split('.');
-          let value: any = row;
-          for (const key of keys) {
-            value = value?.[key];
-          }
-          if (Array.isArray(value)) {
-            obj[col.label] = value.slice(0, 5).join('; ');
-          } else if (typeof value === 'object' && value !== null) {
-            obj[col.label] = value.name || value.title || JSON.stringify(value);
-          } else {
-            obj[col.label] = value ?? '';
-          }
-        });
-        return obj;
-      });
+        const allRows = await fetchAllForExport(config.id);
+        const sheetData = rowsToSheetData(allRows, config.columns);
 
-      const ws = XLSX.utils.json_to_sheet(rows);
-      XLSX.utils.book_append_sheet(wb, ws, config.name.substring(0, 31));
-      sheetsAdded++;
-    });
+        const ws = XLSX.utils.json_to_sheet(sheetData);
+        XLSX.utils.book_append_sheet(wb, ws, config.name.substring(0, 31));
+        sheetsAdded++;
+      }
 
-    if (sheetsAdded === 0) return;
+      if (sheetsAdded === 0) return;
 
-    const dateStr = new Date().toISOString().split('T')[0];
-    const diseases = selectedDiseases.slice(0, 3).join('-').replace(/\s+/g, '_');
-    XLSX.writeFile(wb, `medicuslabs-${diseases}-${dateStr}.xlsx`);
+      const dateStr = new Date().toISOString().split('T')[0];
+      const diseases = selectedDiseases.slice(0, 3).join('-').replace(/\s+/g, '_');
+      XLSX.writeFile(wb, `medicuslabs-${diseases}-${dateStr}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -394,8 +412,20 @@ const DiseaseDataByType: React.FC = () => {
                 <div className="card-content">
                   <h3>{config.name}</h3>
                   <p className="card-count">
-                    {loading ? '...' : counts[config.id].toLocaleString()}
-                    <span className="card-label"> results</span>
+                    {loading ? '...' : (
+                      results[config.id]?.columnFilters?.length > 0 && results[config.id]?.total !== counts[config.id] ? (
+                        <>
+                          <span className="filtered-count">{results[config.id].total.toLocaleString()}</span>
+                          <span className="original-count"> / {counts[config.id].toLocaleString()}</span>
+                          <span className="card-label"> filtered</span>
+                        </>
+                      ) : (
+                        <>
+                          {counts[config.id].toLocaleString()}
+                          <span className="card-label"> results</span>
+                        </>
+                      )
+                    )}
                   </p>
                 </div>
               </label>
@@ -407,9 +437,9 @@ const DiseaseDataByType: React.FC = () => {
             <button
               className="export-all-btn"
               onClick={handleExportAllXLSX}
-              disabled={Object.values(results).every(r => !r || r.collapsed || r.data.length === 0)}
+              disabled={exporting || Object.values(results).every(r => !r || r.collapsed || r.total === 0)}
             >
-              📊 Export All as XLSX
+              {exporting ? '⏳ Exporting...' : '📊 Export All as XLSX'}
             </button>
             <span className="export-hint">Exports visible categories as separate sheets</span>
           </div>
@@ -436,9 +466,9 @@ const DiseaseDataByType: React.FC = () => {
                       <button
                         className="export-btn"
                         onClick={() => handleExport(config.id)}
-                        disabled={typeResults.data.length === 0}
+                        disabled={typeResults.data.length === 0 || exporting}
                       >
-                        📥 CSV
+                        {exporting ? '⏳' : '📥'} CSV
                       </button>
                     </div>
                   </div>
