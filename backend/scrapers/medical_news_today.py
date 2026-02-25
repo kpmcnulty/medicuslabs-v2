@@ -27,7 +27,7 @@ class MedicalNewsTodayScraper(BaseScraper):
             return []
 
         # Get max results from kwargs
-        max_results = kwargs.get('max_results') or 20
+        max_results = kwargs.get("max_results") or 200
 
         # Build search URL
         encoded_term = quote_plus(disease_term)

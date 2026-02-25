@@ -24,7 +24,7 @@ class DrugsComScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 20
+        max_results = kwargs.get("max_results") or 100
         logger.info(f"Searching Drugs.com (browser) for: {disease_term}")
 
         try:

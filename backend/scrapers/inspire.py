@@ -41,7 +41,7 @@ class InspireScraper(BaseScraper):
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         """Search Inspire for disease-related discussions"""
-        max_results = kwargs.get('max_results') or 50
+        max_results = kwargs.get('max_results') or 200
         logger.info(f"Searching Inspire for: {disease_term}")
 
         results = []
