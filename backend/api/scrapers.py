@@ -34,6 +34,7 @@ from scrapers.myhealthteam import MyHealthTeamScraper
 from scrapers.inspire import InspireScraper
 from scrapers.pullpush import PullpushScraper
 from scrapers.patientinfo import PatientInfoScraper
+from scrapers.healingwell import HealingWellScraper
 
 router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
 
@@ -150,6 +151,8 @@ async def trigger_scrape(
         "patient.info": PatientInfoScraper,
         "patientinfo": PatientInfoScraper,
         "patient.info forums": PatientInfoScraper,
+        "healingwell": HealingWellScraper,
+        "healing well": HealingWellScraper,
     }
 
     if source_name_lower not in scraper_map:

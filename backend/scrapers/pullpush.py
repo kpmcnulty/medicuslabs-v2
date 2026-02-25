@@ -19,13 +19,35 @@ class PullpushScraper(BaseScraper):
         self.base_url = "https://api.pullpush.io/reddit"
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
-        """Search Reddit historical data for disease-related submissions"""
+        """Search Reddit historical data for disease-related submissions.
+        
+        Supports incremental scraping via crawl_state:
+        - Stores last_timestamp per disease_term
+        - Incremental: only fetches posts newer than last run
+        - Historical: paginates backwards through all time
+        """
         if not disease_term:
             return []
 
         max_results = kwargs.get('max_results') or 100
         before = kwargs.get('before')  # epoch timestamp
         after = kwargs.get('after')    # epoch timestamp
+        
+        # Check crawl state for incremental support
+        if not after and not before:
+            try:
+                state = await self.get_source_state()
+                crawl_state = state.get('crawl_state', {})
+                if isinstance(crawl_state, str):
+                    import json
+                    crawl_state = json.loads(crawl_state)
+                disease_key = disease_term.lower().replace(' ', '_')
+                last_ts = crawl_state.get(f'last_timestamp_{disease_key}')
+                if last_ts:
+                    after = int(last_ts)
+                    logger.info(f"Incremental mode: fetching posts after {datetime.fromtimestamp(after)}")
+            except Exception as e:
+                logger.debug(f"Could not load crawl state: {e}")
 
         results = []
         current_before = before  # None means latest
@@ -72,6 +94,22 @@ class PullpushScraper(BaseScraper):
         comment_limit = min(10, len(results))
         if comment_limit > 0:
             await self._fetch_comments_batch(results[:comment_limit])
+
+        # Update crawl state with newest timestamp for incremental next time
+        if results:
+            try:
+                newest_ts = max(r.get('created_utc', 0) for r in results)
+                if newest_ts:
+                    disease_key = disease_term.lower().replace(' ', '_')
+                    state = await self.get_source_state()
+                    crawl_state = state.get('crawl_state', {})
+                    if isinstance(crawl_state, str):
+                        import json
+                        crawl_state = json.loads(crawl_state)
+                    crawl_state[f'last_timestamp_{disease_key}'] = newest_ts
+                    await self.update_source_state(crawl_state=crawl_state)
+            except Exception as e:
+                logger.debug(f"Could not save crawl state: {e}")
 
         logger.info(f"Found {len(results)} Reddit submissions for '{disease_term}'")
         return results[:max_results]
