@@ -34,7 +34,7 @@ class HealingWellScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 50
+        max_results = kwargs.get('max_results')
         
         # Find matching forum ID
         term_lower = disease_term.lower()
@@ -51,7 +51,7 @@ class HealingWellScraper(BaseScraper):
         results = []
         page = 1
 
-        while len(results) < max_results:
+        while max_results is None or len(results) < max_results:
             url = f"{self.base_url}/default.aspx?f={forum_id}&p={page}"
             try:
                 html = await self.fetch_with_browser(url, wait_ms=3000)

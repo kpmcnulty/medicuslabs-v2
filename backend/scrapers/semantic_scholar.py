@@ -24,7 +24,7 @@ class SemanticScholarScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 100
+        max_results = kwargs.get('max_results') or 500
         results = []
         offset = 0
         limit = min(100, max_results)  # API max is 100 per request

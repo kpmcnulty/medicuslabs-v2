@@ -29,7 +29,7 @@ class PullpushScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get("max_results") or 1000
+        max_results = kwargs.get('max_results') or 5000
         before = kwargs.get('before')  # epoch timestamp
         after = kwargs.get('after')    # epoch timestamp
         

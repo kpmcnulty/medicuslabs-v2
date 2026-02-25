@@ -38,7 +38,7 @@ class RedditSearchScraper(BaseScraper):
             logger.error("Reddit API credentials not configured")
             return []
 
-        max_results = kwargs.get('max_results') or 250
+        max_results = kwargs.get('max_results') or 1000
         include_comments = kwargs.get('include_comments', True)
         comment_limit = kwargs.get('comment_limit', 10)
 

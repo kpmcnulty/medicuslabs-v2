@@ -27,7 +27,7 @@ class MedicalNewsTodayScraper(BaseScraper):
             return []
 
         # Get max results from kwargs
-        max_results = kwargs.get("max_results") or 200
+        max_results = kwargs.get('max_results')
 
         # Build search URL
         encoded_term = quote_plus(disease_term)
@@ -58,7 +58,7 @@ class MedicalNewsTodayScraper(BaseScraper):
                     if not href.startswith('http'):
                         href = f"{self.base_url}{href}"
                     article_links.append(href)
-                    if len(article_links) >= max_results:
+                    if max_results is not None and len(article_links) >= max_results:
                         break
 
             # Fetch each article

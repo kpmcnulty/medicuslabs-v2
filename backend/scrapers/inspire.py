@@ -41,7 +41,7 @@ class InspireScraper(BaseScraper):
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         """Search Inspire for disease-related discussions"""
-        max_results = kwargs.get('max_results') or 200
+        max_results = kwargs.get('max_results')
         logger.info(f"Searching Inspire for: {disease_term}")
 
         results = []
@@ -109,7 +109,7 @@ class InspireScraper(BaseScraper):
                             disc_data = await self._fetch_discussion(full_url, title)
                             if disc_data:
                                 results.append(disc_data)
-                                if len(results) >= max_results:
+                                if max_results is not None and len(results) >= max_results:
                                     return results
             except Exception as e:
                 logger.debug(f"Error browsing group {group_slug}: {e}")

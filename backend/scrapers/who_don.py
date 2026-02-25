@@ -30,7 +30,7 @@ class WHODiseaseOutbreakNewsScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 50
+        max_results = kwargs.get('max_results')
         logger.info(f"Fetching WHO DON for: {disease_term}")
 
         try:
@@ -53,7 +53,7 @@ class WHODiseaseOutbreakNewsScraper(BaseScraper):
                     item['_summary_clean'] = summary
                     item['_response_clean'] = response_text
                     results.append(item)
-                    if len(results) >= max_results:
+                    if max_results is not None and len(results) >= max_results:
                         break
 
             logger.info(f"Found {len(results)} WHO DON articles for '{disease_term}'")

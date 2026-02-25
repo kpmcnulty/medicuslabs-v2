@@ -24,7 +24,7 @@ class HealthUnlockedScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 500
+        max_results = kwargs.get('max_results')
         fetch_full = kwargs.get('fetch_full_posts', True)
         logger.info(f"Searching HealthUnlocked API for: {disease_term} (max {max_results})")
 
@@ -33,11 +33,11 @@ class HealthUnlockedScraper(BaseScraper):
         page_size = 20  # API returns 20 per page
 
         try:
-            while len(results) < max_results:
+            while max_results is None or len(results) < max_results:
                 await self.rate_limiter.acquire()
                 params = {'q': disease_term}
                 if offset > 0:
-                    params['from'] = offset
+                    params['start'] = offset
 
                 response = await self.client.get(
                     self.api_url,
@@ -57,7 +57,7 @@ class HealthUnlockedScraper(BaseScraper):
                            f"{len(posts)} posts ({len(results)}/{min(total, max_results)} so far)")
 
                 for post in posts:
-                    if len(results) >= max_results:
+                    if max_results is not None and len(results) >= max_results:
                         break
 
                     post_id = post.get('postId')

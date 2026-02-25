@@ -37,7 +37,7 @@ class MyHealthTeamScraper(BaseScraper):
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         """Scrape MyHealthTeam resources for a disease"""
-        max_results = kwargs.get('max_results') or 500
+        max_results = kwargs.get('max_results')
         logger.info(f"Searching MyHealthTeam for: {disease_term}")
 
         results = []

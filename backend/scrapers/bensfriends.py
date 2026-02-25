@@ -37,7 +37,7 @@ class BensFriendsScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 300
+        max_results = kwargs.get('max_results')
         logger.info(f"Searching Ben's Friends for: {disease_term}")
 
         results = []
@@ -175,7 +175,7 @@ class BensFriendsScraper(BaseScraper):
         page = 0
 
         try:
-            while len(results) < max_results:
+            while max_results is None or len(results) < max_results:
                 await self.rate_limiter.acquire()
                 response = await self.client.get(
                     f"{base_url}/latest.json",
@@ -218,7 +218,7 @@ class BensFriendsScraper(BaseScraper):
                         'category': full_topic.get('category', '') if full_topic else '',
                     })
 
-                    if len(results) >= max_results:
+                    if max_results is not None and len(results) >= max_results:
                         break
 
                 page += 1

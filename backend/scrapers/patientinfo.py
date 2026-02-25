@@ -21,11 +21,11 @@ class PatientInfoScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 50
+        max_results = kwargs.get('max_results')
         results = []
         page = 1
 
-        while len(results) < max_results:
+        while max_results is None or len(results) < max_results:
             params = {'q': disease_term, 'page': page}
             try:
                 data = await self.make_request(f"{self.base_url}/search.json", params=params)
