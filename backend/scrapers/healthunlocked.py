@@ -20,58 +20,84 @@ class HealthUnlockedScraper(BaseScraper):
         self.api_url = "https://healthunlocked.com/public/search/posts"
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
-        """Search HealthUnlocked via their public search API"""
+        """Search HealthUnlocked via their public search API with pagination"""
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 50
-        logger.info(f"Searching HealthUnlocked API for: {disease_term}")
+        max_results = kwargs.get('max_results') or 500
+        fetch_full = kwargs.get('fetch_full_posts', True)
+        logger.info(f"Searching HealthUnlocked API for: {disease_term} (max {max_results})")
+
+        results = []
+        offset = 0
+        page_size = 20  # API returns 20 per page
 
         try:
-            await self.rate_limiter.acquire()
-            response = await self.client.get(
-                self.api_url,
-                params={'q': disease_term},
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            )
-            response.raise_for_status()
-            data = response.json()
+            while len(results) < max_results:
+                await self.rate_limiter.acquire()
+                params = {'q': disease_term}
+                if offset > 0:
+                    params['from'] = offset
 
-            posts = data.get('posts', [])
-            results = []
+                response = await self.client.get(
+                    self.api_url,
+                    params=params,
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                )
+                response.raise_for_status()
+                data = response.json()
 
-            for post in posts[:max_results]:
-                post_id = post.get('postId')
-                community = post.get('community', {})
-                author = post.get('author', {})
-                highlight = post.get('highlight', [])
+                posts = data.get('posts', [])
+                total = data.get('total', 0)
 
-                # Build content from highlights (search snippets with [b] markup)
-                content = '\n'.join(highlight).replace('[b]', '').replace('[/b]', '').replace('[i]', '').replace('[/i]', '')
+                if not posts:
+                    break
 
-                # Try to fetch full post content
-                full_content = await self._fetch_post(community.get('slug', ''), post_id)
-                if full_content:
-                    content = full_content
+                logger.info(f"HealthUnlocked page {offset // page_size + 1}: "
+                           f"{len(posts)} posts ({len(results)}/{min(total, max_results)} so far)")
 
-                results.append({
-                    'post_id': str(post_id),
-                    'title': post.get('title', 'Untitled'),
-                    'content': content,
-                    'author': author.get('username', 'Anonymous'),
-                    'community': community.get('name', ''),
-                    'community_slug': community.get('slug', ''),
-                    'date': post.get('dateCreated'),
-                    'reply_count': post.get('totalResponses', 0),
-                    'link': f"{self.base_url}/{community.get('slug', '')}/posts/{post_id}" if community.get('slug') else '',
-                })
+                for post in posts:
+                    if len(results) >= max_results:
+                        break
+
+                    post_id = post.get('postId')
+                    community = post.get('community', {})
+                    author = post.get('author', {})
+                    highlight = post.get('highlight', [])
+
+                    # Build content from highlights
+                    content = '\n'.join(highlight).replace('[b]', '').replace('[/b]', '').replace('[i]', '').replace('[/i]', '')
+
+                    # Fetch full post content (rate limited)
+                    if fetch_full:
+                        full_content = await self._fetch_post(community.get('slug', ''), post_id)
+                        if full_content:
+                            content = full_content
+
+                    results.append({
+                        'post_id': str(post_id),
+                        'title': post.get('title', 'Untitled'),
+                        'content': content,
+                        'author': author.get('username', 'Anonymous'),
+                        'community': community.get('name', ''),
+                        'community_slug': community.get('slug', ''),
+                        'date': post.get('dateCreated'),
+                        'reply_count': post.get('totalResponses', 0),
+                        'link': f"{self.base_url}/{community.get('slug', '')}/posts/{post_id}" if community.get('slug') else '',
+                    })
+
+                offset += page_size
+
+                # Stop if we've fetched all available
+                if offset >= total:
+                    break
 
             logger.info(f"Found {len(results)} posts on HealthUnlocked for '{disease_term}'")
             return results
 
         except Exception as e:
             logger.error(f"Error searching HealthUnlocked for '{disease_term}': {e}")
-            return []
+            return results  # Return what we have so far
 
     async def _fetch_post(self, community_slug: str, post_id: int) -> Optional[str]:
         """Fetch full post content via API"""
@@ -86,7 +112,6 @@ class HealthUnlockedScraper(BaseScraper):
             if response.status_code == 200:
                 data = response.json()
                 post_body = data.get('body', '') or data.get('content', '') or data.get('text', '')
-                # Also grab responses/replies
                 responses = data.get('responses', [])
                 parts = [post_body] if post_body else []
                 for r in responses[:10]:

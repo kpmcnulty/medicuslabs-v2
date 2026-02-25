@@ -37,7 +37,7 @@ class BensFriendsScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 100
+        max_results = kwargs.get('max_results') or 300
         logger.info(f"Searching Ben's Friends for: {disease_term}")
 
         results = []
@@ -169,44 +169,61 @@ class BensFriendsScraper(BaseScraper):
             return None
 
     async def _fetch_latest_topics(self, base_url: str, site_name: str,
-                                    max_results: int = 50) -> List[Dict[str, Any]]:
-        """Fetch latest topics from a Discourse forum"""
+                                    max_results: int = 300) -> List[Dict[str, Any]]:
+        """Fetch latest topics from a Discourse forum with pagination"""
         results = []
+        page = 0
+
         try:
-            await self.rate_limiter.acquire()
-            response = await self.client.get(
-                f"{base_url}/latest.json",
-                headers={'Accept': 'application/json'},
-                timeout=15
-            )
-            if response.status_code != 200:
-                return []
+            while len(results) < max_results:
+                await self.rate_limiter.acquire()
+                response = await self.client.get(
+                    f"{base_url}/latest.json",
+                    params={'page': page},
+                    headers={'Accept': 'application/json'},
+                    timeout=15
+                )
+                if response.status_code != 200:
+                    break
 
-            data = response.json()
-            topics = data.get('topic_list', {}).get('topics', [])
+                data = response.json()
+                topics = data.get('topic_list', {}).get('topics', [])
+                
+                if not topics:
+                    break
+                    
+                more = data.get('topic_list', {}).get('more_topics_url', '')
+                logger.info(f"Ben's Friends page {page}: {len(topics)} topics ({len(results)} so far)")
 
-            for topic in topics[:max_results]:
-                topic_id = topic.get('id')
-                full_topic = await self._fetch_topic(base_url, topic_id)
+                for topic in topics:
+                    topic_id = topic.get('id')
+                    full_topic = await self._fetch_topic(base_url, topic_id)
 
-                results.append({
-                    'topic_id': topic_id,
-                    'post_id': None,
-                    'title': topic.get('title', ''),
-                    'content': topic.get('excerpt', ''),
-                    'full_content': full_topic.get('content', '') if full_topic else '',
-                    'author': topic.get('last_poster_username', 'anonymous'),
-                    'created_at': topic.get('created_at', ''),
-                    'reply_count': topic.get('reply_count', 0),
-                    'views': topic.get('views', 0),
-                    'like_count': topic.get('like_count', 0),
-                    'site_name': site_name,
-                    'site_url': base_url,
-                    'url': f"{base_url}/t/{topic.get('slug', 'topic')}/{topic_id}",
-                    'replies': full_topic.get('replies', []) if full_topic else [],
-                    'tags': topic.get('tags', []),
-                    'category': full_topic.get('category', '') if full_topic else '',
-                })
+                    results.append({
+                        'topic_id': topic_id,
+                        'post_id': None,
+                        'title': topic.get('title', ''),
+                        'content': topic.get('excerpt', ''),
+                        'full_content': full_topic.get('content', '') if full_topic else '',
+                        'author': topic.get('last_poster_username', 'anonymous'),
+                        'created_at': topic.get('created_at', ''),
+                        'reply_count': topic.get('reply_count', 0),
+                        'views': topic.get('views', 0),
+                        'like_count': topic.get('like_count', 0),
+                        'site_name': site_name,
+                        'site_url': base_url,
+                        'url': f"{base_url}/t/{topic.get('slug', 'topic')}/{topic_id}",
+                        'replies': full_topic.get('replies', []) if full_topic else [],
+                        'tags': topic.get('tags', []),
+                        'category': full_topic.get('category', '') if full_topic else '',
+                    })
+
+                    if len(results) >= max_results:
+                        break
+
+                page += 1
+                if not more:
+                    break
 
         except Exception as e:
             logger.warning(f"Error fetching latest from {base_url}: {e}")
