@@ -11,11 +11,11 @@ from core.config import settings
 class PubMedScraper(BaseScraper):
     """Enhanced PubMed scraper that captures ALL available metadata"""
     
-    def __init__(self):
+    def __init__(self, source_id: int = None):
         # Source ID 1 is PubMed from our initial data
         # Use higher rate limit if API key is provided
         rate_limit = 10.0 if settings.pubmed_api_key else 3.0
-        super().__init__(source_id=1, source_name="PubMed", rate_limit=rate_limit)
+        super().__init__(source_id=source_id or 1, source_name="PubMed", rate_limit=rate_limit)
         self.api_key = settings.pubmed_api_key
         self.BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
     
@@ -46,6 +46,10 @@ class PubMedScraper(BaseScraper):
             results.extend(batch_results)
         
         logger.info(f"Found {len(results)} articles with ENHANCED data for '{disease_term}'")
+        
+        # Enrich with PMC full text (especially for articles missing abstracts)
+        results = await self._enrich_with_pmc_fulltext(results)
+        
         return results
     
     async def _search_pmids(self, disease_term: str, max_results: int, since_date: datetime = None, **kwargs) -> List[str]:
@@ -114,6 +118,8 @@ class PubMedScraper(BaseScraper):
             params["api_key"] = self.api_key
         
         try:
+            # Rate limit before making request
+            await self.rate_limiter.acquire()
             # Make request - returns XML with ALL available data
             response = await self.client.get(f"{self.BASE_URL}/efetch.fcgi", params=params)
             response.raise_for_status()
@@ -496,7 +502,114 @@ class PubMedScraper(BaseScraper):
         """Fetch detailed information for a specific article"""
         results = await self._fetch_enhanced_batch([pmid])
         return results[0] if results else {}
-    
+
+    async def _enrich_with_pmc_fulltext(self, articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Enrich articles with PMC full text where available.
+        
+        Uses the PMC ID converter to find PMCIDs, then fetches full article
+        text from PMC for articles that have it (especially those missing abstracts).
+        """
+        if not articles:
+            return articles
+
+        # Batch convert PMIDs to PMCIDs (up to 200 at a time)
+        pmid_to_article = {a['pmid']: a for a in articles}
+        pmids = list(pmid_to_article.keys())
+        pmid_to_pmcid = {}
+
+        for i in range(0, len(pmids), 200):
+            batch = pmids[i:i+200]
+            try:
+                await self.rate_limiter.acquire()
+                response = await self.client.get(
+                    "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/",
+                    params={
+                        'ids': ','.join(batch),
+                        'format': 'json',
+                        'tool': 'medicuslabs',
+                        'email': 'contact@medicuslabs.com'
+                    },
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    for rec in data.get('records', []):
+                        if rec.get('pmcid') and rec.get('pmid'):
+                            pmid_to_pmcid[str(rec['pmid'])] = rec['pmcid']
+            except Exception as e:
+                logger.warning(f"PMC ID conversion failed for batch: {e}")
+
+        if not pmid_to_pmcid:
+            logger.info("No PMC articles found for this batch")
+            return articles
+
+        # Prioritize articles without abstracts, but fetch all available
+        pmids_no_abstract = [p for p in pmid_to_pmcid if not pmid_to_article[p].get('abstract')]
+        pmids_with_abstract = [p for p in pmid_to_pmcid if pmid_to_article[p].get('abstract')]
+        
+        # Fetch full text for articles without abstracts first
+        fetch_order = pmids_no_abstract + pmids_with_abstract
+        fetched = 0
+        max_fetch = 100  # Limit to avoid overwhelming the API
+
+        for pmid in fetch_order[:max_fetch]:
+            pmcid = pmid_to_pmcid[pmid]
+            try:
+                await self.rate_limiter.acquire()
+                response = await self.client.get(
+                    f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+                    params={
+                        'db': 'pmc',
+                        'id': pmcid,
+                        'rettype': 'xml',
+                        **({"api_key": self.api_key} if self.api_key else {})
+                    },
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    full_text = self._extract_pmc_text(response.text)
+                    if full_text:
+                        article = pmid_to_article[pmid]
+                        article['pmc_full_text'] = full_text
+                        article['pmcid'] = pmcid
+                        # If no abstract, use first 500 chars of full text as abstract
+                        if not article.get('abstract'):
+                            article['abstract'] = full_text[:1000]
+                        fetched += 1
+            except Exception as e:
+                logger.debug(f"Failed to fetch PMC full text for {pmcid}: {e}")
+
+        logger.info(f"Enriched {fetched}/{len(fetch_order[:max_fetch])} articles with PMC full text "
+                    f"({len(pmids_no_abstract)} had no abstract, {len(pmid_to_pmcid)} total PMC available)")
+        return articles
+
+    def _extract_pmc_text(self, xml_text: str) -> Optional[str]:
+        """Extract readable text from PMC XML"""
+        try:
+            root = ET.fromstring(xml_text)
+            body = root.find('.//body')
+            if body is None:
+                return None
+
+            # Extract all text from body paragraphs
+            paragraphs = []
+            for elem in body.iter():
+                if elem.tag in ('p', 'title', 'label'):
+                    # Get all text including tail
+                    text = ''.join(elem.itertext()).strip()
+                    if text and len(text) > 10:
+                        if elem.tag == 'title':
+                            paragraphs.append(f"\n## {text}")
+                        else:
+                            paragraphs.append(text)
+
+            full_text = '\n\n'.join(paragraphs)
+            # Cap at 50KB to avoid massive documents
+            return full_text[:50000] if full_text else None
+        except Exception as e:
+            logger.debug(f"Error parsing PMC XML: {e}")
+            return None
+
     def extract_document_data(self, raw_data: Dict[str, Any]) -> Tuple[DocumentCreate, Optional[datetime]]:
         """Extract and transform enhanced article data"""
         pmid = raw_data["pmid"]
@@ -507,9 +620,13 @@ class PubMedScraper(BaseScraper):
         if raw_data.get("abstract"):
             content_parts.append(f"ABSTRACT: {raw_data['abstract']}")
         
+        # Include PMC full text if available
+        if raw_data.get("pmc_full_text"):
+            content_parts.append(f"FULL TEXT:\n{raw_data['pmc_full_text']}")
+        
         if raw_data.get("detailed_authors"):
             author_names = [author.get("name", "") for author in raw_data["detailed_authors"]]
-            content_parts.append(f"AUTHORS: {', '.join(author_names[:10])}")  # Limit authors
+            content_parts.append(f"AUTHORS: {', '.join(author_names[:10])}")
         
         if raw_data.get("mesh_terms"):
             content_parts.append(f"MESH TERMS: {', '.join(raw_data['mesh_terms'])}")
@@ -570,6 +687,8 @@ class PubMedScraper(BaseScraper):
         metadata = {
             # Basic info
             "pmid": pmid,
+            "pmcid": raw_data.get("pmcid", ""),
+            "has_full_text": bool(raw_data.get("pmc_full_text")),
             "journal": raw_data.get("journal", ""),
             "issn": raw_data.get("issn", ""),
             "language": raw_data.get("language", "en"),

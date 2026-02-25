@@ -10,9 +10,9 @@ class ClinicalTrialsScraper(BaseScraper):
     
     BASE_URL = "https://clinicaltrials.gov/api/v2"
     
-    def __init__(self):
+    def __init__(self, source_id: int = None):
         # Source ID 2 is ClinicalTrials.gov from our initial data
-        super().__init__(source_id=2, source_name="ClinicalTrials.gov", rate_limit=10.0)
+        super().__init__(source_id=source_id or 2, source_name="ClinicalTrials.gov", rate_limit=10.0)
     
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         """Search for clinical trials by disease term"""

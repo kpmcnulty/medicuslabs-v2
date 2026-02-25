@@ -9,70 +9,63 @@ from models.schemas import DocumentCreate
 
 
 class DrugsComScraper(BaseScraper):
-    """Scraper for Drugs.com drug information"""
+    """Scraper for Drugs.com drug information (uses Playwright for bot detection bypass)"""
 
     def __init__(self, source_id: int = None):
         super().__init__(
             source_id=source_id or 0,
             source_name="Drugs.com",
-            rate_limit=0.5  # 0.5 requests per second (be respectful)
+            rate_limit=0.3
         )
         self.base_url = "https://www.drugs.com"
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
-        """Search Drugs.com for drugs related to a disease"""
+        """Search Drugs.com using Playwright, then fetch individual drug pages"""
         if not disease_term:
-            logger.warning("No disease term provided for Drugs.com search")
             return []
 
-        logger.info(f"Searching Drugs.com for: {disease_term}")
+        max_results = kwargs.get('max_results') or 20
+        logger.info(f"Searching Drugs.com (browser) for: {disease_term}")
 
         try:
-            # Search URL
-            search_url = f"{self.base_url}/search.php"
-            params = {'searchterm': disease_term}
+            # Get search results page
+            search_url = f"{self.base_url}/search.php?searchterm={quote_plus(disease_term)}"
+            html = await self.fetch_with_browser(search_url, wait_selector='.ddc-search-results', wait_ms=3000)
+            if not html:
+                return []
 
-            await self.rate_limiter.acquire()
-            response = await self.client.get(search_url, params=params)
-            response.raise_for_status()
-
-            # Parse search results
-            soup = BeautifulSoup(response.text, 'html.parser')
-
+            soup = BeautifulSoup(html, 'html.parser')
             results = []
-            # Look for drug links in search results
-            # Drugs.com search results typically have links in .ddc-search-results or similar
-            drug_links = soup.select('a[href^="/"]')
 
-            seen_urls = set()
-            for link in drug_links:
+            # Extract search result links — actual drug/condition pages
+            search_results = soup.select('.ddc-search-result a.ddc-search-result-link-wrap')
+            drug_urls = []
+            for link in search_results:
                 href = link.get('href', '')
+                if href and not any(skip in href for skip in ['/answers/', '/news/', '/search', '#']):
+                    full_url = href if href.startswith('http') else f"{self.base_url}{href}"
+                    drug_urls.append(full_url)
 
-                # Filter for drug pages (typically /drug-name.html or /mtm/drug-name.html)
-                if href and (href.endswith('.html') or '/mtm/' in href or '/sfx/' in href):
-                    full_url = f"{self.base_url}{href}"
+            # Also grab individual drug links from news/list sections
+            for link in soup.select('.ddc-search-result a[href$=".html"]'):
+                href = link.get('href', '')
+                if href and '/news/' not in href and '/search' not in href and '/answers/' not in href:
+                    full_url = href if href.startswith('http') else f"{self.base_url}{href}"
+                    if full_url not in drug_urls:
+                        drug_urls.append(full_url)
 
-                    # Avoid duplicates
-                    if full_url in seen_urls:
-                        continue
-                    seen_urls.add(full_url)
+            logger.info(f"Found {len(drug_urls)} drug page URLs to fetch")
 
-                    # Fetch drug page details
-                    try:
-                        await self.rate_limiter.acquire()
-                        drug_response = await self.client.get(full_url)
-                        drug_response.raise_for_status()
-
-                        drug_data = self._parse_drug_page(full_url, drug_response.text)
+            # Fetch each drug page
+            for url in drug_urls[:max_results]:
+                try:
+                    drug_html = await self.fetch_with_browser(url, wait_ms=2000)
+                    if drug_html:
+                        drug_data = self._parse_drug_page(url, drug_html)
                         if drug_data:
                             results.append(drug_data)
-
-                        # Limit to avoid too many requests
-                        if len(results) >= 20:
-                            break
-
-                    except Exception as e:
-                        logger.debug(f"Error fetching drug page {full_url}: {e}")
+                except Exception as e:
+                    logger.debug(f"Error fetching drug page {url}: {e}")
 
             logger.info(f"Found {len(results)} drugs on Drugs.com for '{disease_term}'")
             return results
@@ -82,63 +75,68 @@ class DrugsComScraper(BaseScraper):
             return []
 
     def _parse_drug_page(self, url: str, html: str) -> Optional[Dict[str, Any]]:
-        """Parse a Drugs.com drug page to extract information"""
+        """Parse a Drugs.com drug page"""
         try:
             soup = BeautifulSoup(html, 'html.parser')
 
-            # Extract drug name from title or h1
+            # Extract drug name
             drug_name = ''
-            title_tag = soup.find('title')
-            if title_tag:
-                drug_name = title_tag.text.split('|')[0].strip()
-
+            h1_tag = soup.find('h1')
+            if h1_tag:
+                drug_name = h1_tag.text.strip()
             if not drug_name:
-                h1_tag = soup.find('h1')
-                if h1_tag:
-                    drug_name = h1_tag.text.strip()
-
-            if not drug_name:
-                logger.debug(f"Could not extract drug name from {url}")
+                title_tag = soup.find('title')
+                if title_tag:
+                    drug_name = title_tag.text.split('|')[0].split('-')[0].strip()
+            if not drug_name or len(drug_name) < 2:
                 return None
 
-            # Extract description/indication
+            # Extract description
             description = ''
-            # Look for "What is [drug]?" section
-            desc_section = soup.find('h2', string=lambda text: text and 'What is' in text)
+            desc_section = soup.find('h2', string=lambda t: t and 'What is' in t)
             if desc_section:
                 desc_p = desc_section.find_next('p')
                 if desc_p:
                     description = desc_p.get_text(strip=True)
+            # Fallback: first paragraph in main content
+            if not description:
+                main = soup.select_one('.ddc-main-content, #content, main')
+                if main:
+                    first_p = main.find('p')
+                    if first_p:
+                        description = first_p.get_text(strip=True)
 
             # Extract side effects
             side_effects = ''
-            side_effects_section = soup.find('h2', string=lambda text: text and 'side effects' in text.lower() if text else False)
-            if side_effects_section:
-                side_effects_list = side_effects_section.find_next('ul')
-                if side_effects_list:
-                    side_effects = side_effects_list.get_text(separator='\n', strip=True)
+            se_section = soup.find('h2', string=lambda t: t and 'side effects' in t.lower() if t else False)
+            if se_section:
+                se_list = se_section.find_next('ul')
+                if se_list:
+                    side_effects = se_list.get_text(separator='\n', strip=True)
 
-            # Extract drug interactions
+            # Extract interactions
             interactions = ''
-            interactions_section = soup.find('h2', string=lambda text: text and 'interaction' in text.lower() if text else False)
-            if interactions_section:
-                interactions_p = interactions_section.find_next('p')
-                if interactions_p:
-                    interactions = interactions_p.get_text(strip=True)
+            int_section = soup.find('h2', string=lambda t: t and 'interaction' in t.lower() if t else False)
+            if int_section:
+                int_p = int_section.find_next('p')
+                if int_p:
+                    interactions = int_p.get_text(strip=True)
 
-            # Extract dosage info
+            # Extract dosage
             dosage = ''
-            dosage_section = soup.find('h2', string=lambda text: text and 'dosage' in text.lower() if text else False)
-            if dosage_section:
-                dosage_p = dosage_section.find_next('p')
-                if dosage_p:
-                    dosage = dosage_p.get_text(strip=True)
+            dos_section = soup.find('h2', string=lambda t: t and 'dosage' in t.lower() if t else False)
+            if dos_section:
+                dos_p = dos_section.find_next('p')
+                if dos_p:
+                    dosage = dos_p.get_text(strip=True)
 
-            # Extract drug class (if available)
+            # Extract drug class
             drug_class = ''
             class_tag = soup.find('b', string='Drug class:')
             if class_tag:
-                drug_class = class_tag.find_next('a').get_text(strip=True) if class_tag.find_next('a') else ''
+                class_link = class_tag.find_next('a')
+                if class_link:
+                    drug_class = class_link.get_text(strip=True)
 
             return {
                 'url': url,
@@ -155,58 +153,33 @@ class DrugsComScraper(BaseScraper):
             return None
 
     async def fetch_details(self, external_id: str) -> Dict[str, Any]:
-        """Drugs.com scraper fetches all data during search - no detail fetching needed"""
         return {}
 
     def extract_document_data(self, raw_data: Dict[str, Any]) -> Tuple[DocumentCreate, Optional[datetime]]:
-        """Extract and transform Drugs.com drug data"""
-
-        # Build unique ID from URL
-        url = raw_data.get('url', '')
         drug_name = raw_data.get('drug_name', 'Unknown Drug')
-
-        # Generate external_id from drug name
         external_id = f"drugscom_{drug_name.lower().replace(' ', '_').replace('.', '')}"
 
-        # Build content from extracted sections
         content_parts = []
-
-        description = raw_data.get('description', '')
-        if description:
-            content_parts.append(f"DESCRIPTION:\n{description}")
-
-        side_effects = raw_data.get('side_effects', '')
-        if side_effects:
-            content_parts.append(f"SIDE EFFECTS:\n{side_effects}")
-
-        interactions = raw_data.get('interactions', '')
-        if interactions:
-            content_parts.append(f"INTERACTIONS:\n{interactions}")
-
-        dosage = raw_data.get('dosage', '')
-        if dosage:
-            content_parts.append(f"DOSAGE:\n{dosage}")
+        for section, key in [('DESCRIPTION', 'description'), ('SIDE EFFECTS', 'side_effects'),
+                             ('INTERACTIONS', 'interactions'), ('DOSAGE', 'dosage')]:
+            if raw_data.get(key):
+                content_parts.append(f"{section}:\n{raw_data[key]}")
 
         content = '\n\n---\n\n'.join(content_parts)
         summary = content[:500] if len(content) > 500 else content
 
-        # Build metadata
         metadata = {
             'drug_name': drug_name,
             'drug_class': raw_data.get('drug_class', ''),
-            'side_effects_summary': side_effects[:200] if side_effects else '',
-            'interactions_count': len(interactions.split('\n')) if interactions else 0,
+            'side_effects_summary': raw_data.get('side_effects', '')[:200],
         }
-
-        # No source_updated_at since Drugs.com doesn't provide last modified dates easily
-        source_updated_at = None
 
         return DocumentCreate(
             source_id=self.source_id,
             external_id=external_id,
-            url=url,
+            url=raw_data.get('url', ''),
             title=drug_name,
             content=content,
             summary=summary,
             metadata=metadata
-        ), source_updated_at
+        ), None

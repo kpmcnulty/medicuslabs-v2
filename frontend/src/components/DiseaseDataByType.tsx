@@ -30,6 +30,7 @@ const DATA_TYPE_CONFIGS: DataTypeConfig[] = [
     color: '#007bff',
     columns: [
       { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'summary', label: 'Abstract', type: 'string', width: '400' },
       { key: 'metadata.authors', label: 'Authors', type: 'array', width: '200' },
       { key: 'metadata.journal', label: 'Journal', type: 'string', width: '180' },
       { key: 'metadata.publication_date', label: 'Publication Date', type: 'date', sortable: true, width: '140' },
@@ -45,6 +46,7 @@ const DATA_TYPE_CONFIGS: DataTypeConfig[] = [
     color: '#28a745',
     columns: [
       { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'summary', label: 'Summary', type: 'string', width: '400' },
       { key: 'metadata.phase', label: 'Phase', type: 'string', width: '100' },
       { key: 'metadata.status', label: 'Status', type: 'string', width: '120' },
       { key: 'metadata.sponsor', label: 'Sponsor', type: 'string', width: '200' },
@@ -61,6 +63,7 @@ const DATA_TYPE_CONFIGS: DataTypeConfig[] = [
     color: '#fd7e14',
     columns: [
       { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'summary', label: 'Summary', type: 'string', width: '400' },
       { key: 'metadata.publisher', label: 'Publisher', type: 'string', width: '150' },
       { key: 'metadata.published_date', label: 'Published', type: 'date', sortable: true, width: '130' },
       { key: 'diseases', label: 'Diseases', type: 'array', width: '180' },
@@ -73,9 +76,11 @@ const DATA_TYPE_CONFIGS: DataTypeConfig[] = [
     color: '#6f42c1',
     columns: [
       { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
-      { key: 'metadata.subreddit', label: 'Subreddit', type: 'string', width: '150' },
+      { key: 'content_snippet', label: 'Content', type: 'string', width: '400' },
+      { key: 'metadata.community', label: 'Source', type: 'string', width: '150' },
+      { key: 'metadata.author', label: 'Author', type: 'string', width: '120' },
       { key: 'metadata.score', label: 'Score', type: 'number', sortable: true, width: '80' },
-      { key: 'metadata.num_comments', label: 'Comments', type: 'number', sortable: true, width: '100' },
+      { key: 'metadata.reply_count', label: 'Replies', type: 'number', sortable: true, width: '80' },
       { key: 'metadata.posted_date', label: 'Posted Date', type: 'date', sortable: true, width: '120' },
       { key: 'diseases', label: 'Diseases', type: 'array', width: '180' },
     ]
@@ -87,6 +92,7 @@ const DATA_TYPE_CONFIGS: DataTypeConfig[] = [
     color: '#dc3545',
     columns: [
       { key: 'title', label: 'Title', type: 'string', sortable: true, width: '400' },
+      { key: 'summary', label: 'Summary', type: 'string', width: '300' },
       { key: 'metadata.serious', label: 'Serious', type: 'boolean', width: '80' },
       { key: 'metadata.reactions', label: 'Reactions', type: 'array', width: '200' },
       { key: 'metadata.drugs', label: 'Drugs', type: 'array', width: '180' },
@@ -437,14 +443,14 @@ const DiseaseDataByType: React.FC = () => {
             {DATA_TYPE_CONFIGS.map(config => (
               <label
                 key={config.id}
-                className={`summary-card ${counts[config.id] === 0 ? 'disabled' : ''} ${results[config.id]?.collapsed ? 'unchecked' : 'checked'}`}
+                className={`summary-card ${(counts[config.id] ?? 0) === 0 ? 'disabled' : ''} ${results[config.id]?.collapsed ? 'unchecked' : 'checked'}`}
                 style={{ borderLeftColor: results[config.id]?.collapsed ? '#ccc' : config.color }}
               >
                 <input
                   type="checkbox"
                   checked={!results[config.id]?.collapsed}
-                  onChange={() => counts[config.id] > 0 && toggleCollapse(config.id)}
-                  disabled={counts[config.id] === 0}
+                  onChange={() => (counts[config.id] ?? 0) > 0 && toggleCollapse(config.id)}
+                  disabled={(counts[config.id] ?? 0) === 0}
                   className="card-checkbox"
                 />
                 <div className="card-icon">{config.icon}</div>
@@ -452,15 +458,15 @@ const DiseaseDataByType: React.FC = () => {
                   <h3>{config.name}</h3>
                   <p className="card-count">
                     {loading ? '...' : (
-                      results[config.id]?.columnFilters?.length > 0 && results[config.id]?.total !== counts[config.id] ? (
+                      results[config.id]?.columnFilters?.length > 0 && results[config.id]?.total !== (counts[config.id] ?? 0) ? (
                         <>
                           <span className="filtered-count">{results[config.id].total.toLocaleString()}</span>
-                          <span className="original-count"> / {counts[config.id].toLocaleString()}</span>
+                          <span className="original-count"> / {(counts[config.id] ?? 0).toLocaleString()}</span>
                           <span className="card-label"> filtered</span>
                         </>
                       ) : (
                         <>
-                          {counts[config.id].toLocaleString()}
+                          {(counts[config.id] ?? 0).toLocaleString()}
                           <span className="card-label"> results</span>
                         </>
                       )
@@ -517,7 +523,7 @@ const DiseaseDataByType: React.FC = () => {
           <div className="table-sections">
             {DATA_TYPE_CONFIGS.map(config => {
               const typeResults = results[config.id];
-              if (!typeResults || counts[config.id] === 0) return null;
+              if (!typeResults || (counts[config.id] ?? 0) === 0) return null;
 
               return (
                 <div

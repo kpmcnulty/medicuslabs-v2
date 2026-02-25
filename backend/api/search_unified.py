@@ -650,7 +650,8 @@ async def get_search_counts(
             "publications": 0,
             "trials": 0,
             "community": 0,
-            "safety": 0
+            "safety": 0,
+            "news": 0
         }
 
         for row in results:

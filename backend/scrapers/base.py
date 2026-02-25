@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import hashlib
 
+from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from core.config import settings
 from core.database import get_pg_connection
 from models.schemas import DocumentCreate, CrawlJobUpdate
@@ -41,6 +42,11 @@ class BaseScraper(ABC):
         self.errors: List[Dict[str, Any]] = []
         self.disease_ids: List[int] = []
         
+        # Playwright browser (lazy-initialized)
+        self._playwright = None
+        self._browser: Optional[Browser] = None
+        self._browser_context: Optional[BrowserContext] = None
+        
         # Add metrics tracking
         self.metrics = {
             'documents_created': 0,
@@ -58,7 +64,60 @@ class BaseScraper(ABC):
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close_browser()
         await self.client.aclose()
+    
+    async def get_browser(self) -> Browser:
+        """Get or create a Playwright browser instance"""
+        if not self._browser:
+            self._playwright = await async_playwright().start()
+            self._browser = await self._playwright.chromium.launch(
+                headless=True,
+                args=['--disable-blink-features=AutomationControlled']
+            )
+            self._browser_context = await self._browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+        return self._browser
+    
+    async def get_page(self) -> Page:
+        """Get a new browser page"""
+        if not self._browser_context:
+            await self.get_browser()
+        return await self._browser_context.new_page()
+    
+    async def fetch_with_browser(self, url: str, wait_selector: str = None, wait_ms: int = 2000) -> str:
+        """Fetch a page using Playwright browser (bypasses 403s from bot detection)"""
+        await self.rate_limiter.acquire()
+        page = await self.get_page()
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=10000)
+                except:
+                    pass  # Continue even if selector not found
+            elif wait_ms:
+                await page.wait_for_timeout(wait_ms)
+            content = await page.content()
+            return content
+        except Exception as e:
+            logger.error(f"Browser fetch failed for {url}: {e}")
+            return ""
+        finally:
+            await page.close()
+    
+    async def close_browser(self):
+        """Close browser if open"""
+        if self._browser_context:
+            await self._browser_context.close()
+            self._browser_context = None
+        if self._browser:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
     
     @abstractmethod
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
