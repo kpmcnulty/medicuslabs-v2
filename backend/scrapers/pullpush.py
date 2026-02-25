@@ -1,121 +1,204 @@
+"""Pullpush Reddit historical scraper.
+
+Strategy:
+- First run: paginates backwards from now through ALL of Reddit history
+- Saves cursor (oldest_timestamp) per disease after each batch
+- Subsequent runs: picks up where it left off, continuing backwards
+- Once historical is exhausted, switches to forward/incremental mode
+- No artificial caps — gets everything over time
+
+Uses crawl_state JSONB on the sources table:
+  {
+    "multiple_sclerosis": {"oldest_seen": 1234567890, "newest_seen": 1234567890, "exhausted": false},
+    ...
+  }
+"""
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from loguru import logger
-import time
+import json
 
 from .base import BaseScraper
 from models.schemas import DocumentCreate
 
 
 class PullpushScraper(BaseScraper):
-    """Scraper for Reddit historical data via Pullpush.io (formerly Pushshift)"""
+    """Scraper for Reddit historical data via Pullpush.io"""
 
     def __init__(self, source_id: int = None):
         super().__init__(
             source_id=source_id or 0,
             source_name="Pullpush Reddit",
-            rate_limit=1.0  # ~1 req/sec
+            rate_limit=1.0
         )
         self.base_url = "https://api.pullpush.io/reddit"
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
-        """Search Reddit historical data for disease-related submissions.
-        
-        Supports incremental scraping via crawl_state:
-        - Stores last_timestamp per disease_term
-        - Incremental: only fetches posts newer than last run
-        - Historical: paginates backwards through all time
-        """
+        """Scrape Reddit history for a disease term. Resumes from last cursor."""
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 5000
-        before = kwargs.get('before')  # epoch timestamp
-        after = kwargs.get('after')    # epoch timestamp
+        disease_key = disease_term.lower().replace(' ', '_').replace('-', '_')
         
-        # Check crawl state for incremental support
-        if not after and not before:
-            try:
-                state = await self.get_source_state()
-                crawl_state = state.get('crawl_state', {})
-                if isinstance(crawl_state, str):
-                    import json
-                    crawl_state = json.loads(crawl_state)
-                disease_key = disease_term.lower().replace(' ', '_')
-                last_ts = crawl_state.get(f'last_timestamp_{disease_key}')
-                if last_ts:
-                    after = int(last_ts)
-                    logger.info(f"Incremental mode: fetching posts after {datetime.fromtimestamp(after)}")
-            except Exception as e:
-                logger.debug(f"Could not load crawl state: {e}")
+        # Load cursor state
+        state = await self._get_disease_state(disease_key)
+        oldest_seen = state.get('oldest_seen')
+        newest_seen = state.get('newest_seen')
+        exhausted = state.get('exhausted', False)
 
+        if exhausted:
+            # Historical scrape is done — switch to incremental (get new posts)
+            logger.info(f"Pullpush: Historical complete for '{disease_term}', running incremental from {datetime.fromtimestamp(newest_seen) if newest_seen else 'now'}")
+            results = await self._scrape_incremental(disease_term, newest_seen)
+        else:
+            # Historical scrape — paginate backwards from cursor
+            logger.info(f"Pullpush: Historical scrape for '{disease_term}', cursor={'from ' + str(datetime.fromtimestamp(oldest_seen)) if oldest_seen else 'start (latest)'}")
+            results = await self._scrape_historical(disease_term, disease_key, oldest_seen)
+
+        # Update newest_seen for incremental tracking
+        if results:
+            max_ts = max(r.get('created_utc', 0) for r in results)
+            if not newest_seen or max_ts > newest_seen:
+                await self._update_disease_state(disease_key, newest_seen=max_ts)
+
+        logger.info(f"Pullpush: Got {len(results)} posts for '{disease_term}'")
+        return results
+
+    async def _scrape_historical(self, disease_term: str, disease_key: str, 
+                                  cursor_before: int = None) -> List[Dict[str, Any]]:
+        """Paginate backwards through all history. Saves cursor after each batch."""
         results = []
-        current_before = before  # None means latest
+        current_before = cursor_before
+        empty_pages = 0
+        batch_num = 0
 
-        while len(results) < max_results:
-            batch_size = min(100, max_results - len(results))
+        while True:
+            batch_num += 1
             params = {
-                'q': disease_term,
-                'size': batch_size,
+                'q': f'"{disease_term}"',
+                'size': 100,
+                'sort': 'desc',
             }
             if current_before:
                 params['before'] = int(current_before)
-            if after:
-                params['after'] = int(after)
 
+            try:
+                data = await self.make_request(f"{self.base_url}/search/submission", params=params)
+                items = data.get('data', [])
+
+                if not items:
+                    empty_pages += 1
+                    if empty_pages >= 3:
+                        # We've exhausted this source
+                        logger.info(f"Pullpush: Historical scrape exhausted for '{disease_term}' after {len(results)} posts")
+                        await self._update_disease_state(disease_key, exhausted=True)
+                        break
+                    continue
+
+                empty_pages = 0
+
+                for item in items:
+                    if item.get('selftext') in ('[removed]', '[deleted]'):
+                        item['selftext'] = ''
+                    if item.get('title'):
+                        results.append(item)
+
+                # Move cursor to oldest post in this batch
+                oldest_ts = min(item.get('created_utc', 0) for item in items)
+                if oldest_ts == current_before:
+                    # No progress — we're stuck
+                    oldest_ts -= 1
+                current_before = oldest_ts
+
+                # Save cursor after every batch so we can resume
+                await self._update_disease_state(disease_key, oldest_seen=current_before)
+
+                if batch_num % 10 == 0:
+                    oldest_date = datetime.fromtimestamp(current_before) if current_before else None
+                    logger.info(f"Pullpush: {disease_term} batch {batch_num}, {len(results)} posts so far, cursor at {oldest_date}")
+
+                if len(items) < 100:
+                    # Last page
+                    logger.info(f"Pullpush: Reached end of history for '{disease_term}'")
+                    await self._update_disease_state(disease_key, exhausted=True)
+                    break
+
+            except Exception as e:
+                logger.error(f"Pullpush error at batch {batch_num}: {e}")
+                # Save cursor so we resume from here next time
+                if current_before:
+                    await self._update_disease_state(disease_key, oldest_seen=current_before)
+                break
+
+        return results
+
+    async def _scrape_incremental(self, disease_term: str, after_ts: int = None) -> List[Dict[str, Any]]:
+        """Get new posts since last scrape."""
+        results = []
+        params = {
+            'q': f'"{disease_term}"',
+            'size': 100,
+            'sort': 'asc',
+        }
+        if after_ts:
+            params['after'] = int(after_ts)
+
+        # Paginate forward through new posts
+        while True:
             try:
                 data = await self.make_request(f"{self.base_url}/search/submission", params=params)
                 items = data.get('data', [])
                 if not items:
                     break
 
-                # Filter out low-quality posts
                 for item in items:
-                    if item.get('selftext') in ('[removed]', '[deleted]', ''):
+                    if item.get('selftext') in ('[removed]', '[deleted]'):
                         item['selftext'] = ''
-                    # Keep posts with title at minimum
                     if item.get('title'):
                         results.append(item)
 
-                # Paginate: use oldest item's timestamp as next before
-                oldest_ts = min(item.get('created_utc', 0) for item in items)
-                if oldest_ts and oldest_ts == current_before:
-                    break  # No progress
-                current_before = oldest_ts
+                # Move forward
+                newest_ts = max(item.get('created_utc', 0) for item in items)
+                params['after'] = newest_ts
 
-                if len(items) < batch_size:
-                    break  # No more data
+                if len(items) < 100:
+                    break
 
             except Exception as e:
-                logger.error(f"Pullpush submission search error: {e}")
+                logger.error(f"Pullpush incremental error: {e}")
                 break
 
-        # Fetch top comments for a subset (rate limit is strict on comments endpoint)
-        comment_limit = min(10, len(results))
-        if comment_limit > 0:
-            await self._fetch_comments_batch(results[:comment_limit])
+        return results
 
-        # Update crawl state with newest timestamp for incremental next time
-        if results:
-            try:
-                newest_ts = max(r.get('created_utc', 0) for r in results)
-                if newest_ts:
-                    disease_key = disease_term.lower().replace(' ', '_')
-                    state = await self.get_source_state()
-                    crawl_state = state.get('crawl_state', {})
-                    if isinstance(crawl_state, str):
-                        import json
-                        crawl_state = json.loads(crawl_state)
-                    crawl_state[f'last_timestamp_{disease_key}'] = newest_ts
-                    await self.update_source_state(crawl_state=crawl_state)
-            except Exception as e:
-                logger.debug(f"Could not save crawl state: {e}")
+    async def _get_disease_state(self, disease_key: str) -> Dict:
+        """Get crawl state for a specific disease"""
+        try:
+            state = await self.get_source_state()
+            crawl_state = state.get('crawl_state', {})
+            if isinstance(crawl_state, str):
+                crawl_state = json.loads(crawl_state)
+            return crawl_state.get(disease_key, {})
+        except Exception:
+            return {}
 
-        logger.info(f"Found {len(results)} Reddit submissions for '{disease_term}'")
-        return results[:max_results]
+    async def _update_disease_state(self, disease_key: str, **updates):
+        """Update crawl state for a specific disease"""
+        try:
+            state = await self.get_source_state()
+            crawl_state = state.get('crawl_state', {})
+            if isinstance(crawl_state, str):
+                crawl_state = json.loads(crawl_state)
+            
+            if disease_key not in crawl_state:
+                crawl_state[disease_key] = {}
+            crawl_state[disease_key].update(updates)
+            
+            await self.update_source_state(crawl_state=crawl_state)
+        except Exception as e:
+            logger.debug(f"Could not save crawl state for {disease_key}: {e}")
 
     async def _fetch_comments_batch(self, submissions: List[Dict]):
-        """Fetch top comments for submissions via comment search"""
+        """Fetch top comments for submissions"""
         for sub in submissions:
             try:
                 params = {
@@ -129,22 +212,19 @@ class PullpushScraper(BaseScraper):
                 sub['top_comments'] = [
                     {
                         'author': c.get('author', '[deleted]'),
-                        'body': c.get('body', '')[:500],
+                        'body': c.get('body', '')[:2000],
                         'score': c.get('score', 0),
                     }
                     for c in comments
                     if c.get('body') not in ('[removed]', '[deleted]', '')
                 ]
             except Exception as e:
-                logger.debug(f"Failed to fetch comments for {sub['id']}: {e}")
                 sub['top_comments'] = []
 
     async def fetch_details(self, external_id: str) -> Dict[str, Any]:
-        """Not needed - details fetched in search"""
         return {}
 
     def extract_document_data(self, raw_data: Dict[str, Any]) -> Tuple[DocumentCreate, Optional[datetime]]:
-        """Transform Reddit submission data into DocumentCreate"""
         submission_id = raw_data.get('id', '')
         subreddit = raw_data.get('subreddit', 'unknown')
         author = raw_data.get('author', '[deleted]')
@@ -154,23 +234,20 @@ class PullpushScraper(BaseScraper):
         num_comments = raw_data.get('num_comments', 0)
         created_utc = raw_data.get('created_utc', 0)
 
-        # Build content
         parts = [f"TITLE: {title}"]
         if selftext:
-            parts.append(f"POST: {selftext[:3000]}")
+            parts.append(f"POST: {selftext[:5000]}")
         parts.append(f"Subreddit: r/{subreddit} | Score: {score} | Comments: {num_comments}")
 
-        # Add top comments
         top_comments = raw_data.get('top_comments', [])
         if top_comments:
             parts.append("\nTOP COMMENTS:")
-            for c in top_comments[:3]:
+            for c in top_comments:
                 parts.append(f"  [{c.get('score', 0)} pts] u/{c.get('author', '?')}: {c.get('body', '')}")
 
         content = "\n\n".join(parts)
         summary = f"{title[:200]} - r/{subreddit}"
 
-        # Parse timestamp
         source_updated_at = None
         posted_date = None
         if created_utc:

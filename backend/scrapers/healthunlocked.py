@@ -26,11 +26,27 @@ class HealthUnlockedScraper(BaseScraper):
 
         max_results = kwargs.get('max_results')
         fetch_full = kwargs.get('fetch_full_posts', True)
-        logger.info(f"Searching HealthUnlocked API for: {disease_term} (max {max_results})")
+        
+        # Load cursor for resume
+        disease_key = disease_term.lower().replace(' ', '_').replace('-', '_')
+        offset = 0
+        try:
+            state = await self.get_source_state()
+            crawl_state = state.get('crawl_state', {})
+            if isinstance(crawl_state, str):
+                import json as _json
+                crawl_state = _json.loads(crawl_state)
+            saved_offset = crawl_state.get(f'{disease_key}_offset', 0)
+            if saved_offset > 0:
+                offset = saved_offset
+                logger.info(f"HealthUnlocked: Resuming '{disease_term}' from offset {offset}")
+        except Exception:
+            pass
+
+        logger.info(f"Searching HealthUnlocked API for: {disease_term} (offset {offset}, max {max_results})")
 
         results = []
-        offset = 0
-        page_size = 20  # API returns 20 per page
+        page_size = 20
 
         try:
             while max_results is None or len(results) < max_results:
@@ -88,8 +104,23 @@ class HealthUnlockedScraper(BaseScraper):
 
                 offset += page_size
 
+                # Save cursor so we can resume if interrupted
+                try:
+                    state = await self.get_source_state()
+                    crawl_state = state.get('crawl_state', {})
+                    if isinstance(crawl_state, str):
+                        import json as _json
+                        crawl_state = _json.loads(crawl_state)
+                    crawl_state[f'{disease_key}_offset'] = offset
+                    if offset >= total:
+                        crawl_state[f'{disease_key}_exhausted'] = True
+                    await self.update_source_state(crawl_state=crawl_state)
+                except Exception:
+                    pass
+
                 # Stop if we've fetched all available
                 if offset >= total:
+                    logger.info(f"HealthUnlocked: Exhausted all {total} posts for '{disease_term}'")
                     break
 
             logger.info(f"Found {len(results)} posts on HealthUnlocked for '{disease_term}'")
