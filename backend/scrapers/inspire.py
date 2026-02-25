@@ -1,0 +1,237 @@
+"""Inspire.com patient community scraper.
+Inspire hosts disease-specific patient support groups.
+Uses Playwright to bypass bot protection.
+"""
+from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime
+from loguru import logger
+from urllib.parse import quote_plus
+from bs4 import BeautifulSoup
+import re
+
+from .base import BaseScraper
+from models.schemas import DocumentCreate
+
+
+# Disease-to-group mappings on Inspire
+INSPIRE_GROUPS = {
+    'multiple sclerosis': ['national-ms-society', 'multiple-sclerosis'],
+    'ms': ['national-ms-society'],
+    'als': ['als-association', 'amyotrophic-lateral-sclerosis'],
+    'amyotrophic lateral sclerosis': ['als-association'],
+    'aml': ['leukemia-lymphoma-society'],
+    'acute myeloid leukemia': ['leukemia-lymphoma-society'],
+    'fabry disease': ['national-fabry-disease-foundation'],
+    'pku': ['national-pku-alliance'],
+    'phenylketonuria': ['national-pku-alliance'],
+    'alpha-1': ['alpha-1-foundation'],
+}
+
+
+class InspireScraper(BaseScraper):
+    """Scraper for Inspire.com patient communities using Playwright"""
+
+    def __init__(self, source_id: int = None):
+        super().__init__(
+            source_id=source_id or 0,
+            source_name="Inspire",
+            rate_limit=0.3  # Slow for browser requests
+        )
+        self.base_url = "https://www.inspire.com"
+
+    async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
+        """Search Inspire for disease-related discussions"""
+        max_results = kwargs.get('max_results') or 50
+        logger.info(f"Searching Inspire for: {disease_term}")
+
+        results = []
+
+        # Try search page with Playwright
+        try:
+            search_url = f"{self.base_url}/search?q={quote_plus(disease_term)}&type=discussions"
+            html = await self.fetch_with_browser(search_url, wait_ms=4000)
+
+            if html and '403' not in html[:500]:
+                soup = BeautifulSoup(html, 'html.parser')
+
+                # Find discussion links
+                discussion_links = soup.find_all('a', href=re.compile(r'/groups/.*/discussion/'))
+                for link in discussion_links[:max_results]:
+                    href = link.get('href', '')
+                    title = link.get_text(strip=True)
+                    if href and title and len(title) > 5:
+                        full_url = href if href.startswith('http') else f"{self.base_url}{href}"
+                        
+                        # Fetch the discussion page
+                        disc_data = await self._fetch_discussion(full_url, title)
+                        if disc_data:
+                            results.append(disc_data)
+
+                # If search didn't work, try browsing group pages
+                if not results:
+                    results = await self._browse_groups(disease_term, max_results)
+
+            else:
+                # Search page blocked, try browsing groups directly
+                results = await self._browse_groups(disease_term, max_results)
+
+        except Exception as e:
+            logger.error(f"Error searching Inspire for '{disease_term}': {e}")
+
+        logger.info(f"Found {len(results)} discussions from Inspire for '{disease_term}'")
+        return results
+
+    async def _browse_groups(self, disease_term: str, max_results: int) -> List[Dict[str, Any]]:
+        """Browse Inspire group pages to find discussions"""
+        results = []
+        term_lower = disease_term.lower()
+
+        # Find matching groups
+        groups = []
+        for key, slugs in INSPIRE_GROUPS.items():
+            if key in term_lower or term_lower in key:
+                groups.extend(slugs)
+
+        for group_slug in groups:
+            try:
+                group_url = f"{self.base_url}/groups/{group_slug}"
+                html = await self.fetch_with_browser(group_url, wait_ms=4000)
+
+                if html and '403' not in html[:500]:
+                    soup = BeautifulSoup(html, 'html.parser')
+
+                    # Find discussion links
+                    for link in soup.find_all('a', href=re.compile(r'/discussion/')):
+                        href = link.get('href', '')
+                        title = link.get_text(strip=True)
+                        if href and title and len(title) > 5:
+                            full_url = href if href.startswith('http') else f"{self.base_url}{href}"
+                            disc_data = await self._fetch_discussion(full_url, title)
+                            if disc_data:
+                                results.append(disc_data)
+                                if len(results) >= max_results:
+                                    return results
+            except Exception as e:
+                logger.debug(f"Error browsing group {group_slug}: {e}")
+
+        return results
+
+    async def _fetch_discussion(self, url: str, title: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single discussion page"""
+        try:
+            html = await self.fetch_with_browser(url, wait_ms=3000)
+            if not html or '403' in html[:500]:
+                return None
+
+            soup = BeautifulSoup(html, 'html.parser')
+
+            # Extract post content
+            content = ''
+            post_body = soup.find(['div', 'article'], class_=re.compile(r'post|message|content|body'))
+            if post_body:
+                content = post_body.get_text(separator='\n', strip=True)
+
+            if not content or len(content) < 20:
+                return None
+
+            # Extract author
+            author = ''
+            author_elem = soup.find(['span', 'a', 'div'], class_=re.compile(r'author|user|username'))
+            if author_elem:
+                author = author_elem.get_text(strip=True)
+
+            # Extract date
+            date_str = ''
+            date_elem = soup.find('time') or soup.find(['span'], class_=re.compile(r'date|time'))
+            if date_elem:
+                date_str = date_elem.get('datetime') or date_elem.get_text(strip=True)
+
+            # Extract replies
+            replies = []
+            reply_elems = soup.find_all(['div', 'article'], class_=re.compile(r'reply|response|comment'))
+            for reply in reply_elems[:10]:
+                reply_text = reply.get_text(strip=True)[:1000]
+                if reply_text and len(reply_text) > 10:
+                    replies.append({
+                        'content': reply_text,
+                        'author': 'Community Member'
+                    })
+
+            # Extract group name
+            group = ''
+            breadcrumb = soup.find(['nav', 'div'], class_=re.compile(r'breadcrumb|group'))
+            if breadcrumb:
+                group = breadcrumb.get_text(strip=True)
+
+            return {
+                'url': url,
+                'title': title,
+                'content': content[:10000],
+                'author': author,
+                'date': date_str,
+                'group': group,
+                'reply_count': len(replies),
+                'replies': replies,
+            }
+
+        except Exception as e:
+            logger.debug(f"Error fetching discussion {url}: {e}")
+            return None
+
+    async def fetch_details(self, external_id: str) -> Dict[str, Any]:
+        return {}
+
+    def extract_document_data(self, raw_data: Dict[str, Any]) -> Tuple[DocumentCreate, Optional[datetime]]:
+        url = raw_data.get('url', '')
+        slug = url.rstrip('/').split('/')[-1] if url else 'unknown'
+        external_id = f"inspire_{slug}"
+
+        content_parts = []
+        if raw_data.get('title'):
+            content_parts.append(f"TITLE: {raw_data['title']}")
+        if raw_data.get('content'):
+            content_parts.append(f"CONTENT: {raw_data['content']}")
+        if raw_data.get('author'):
+            content_parts.append(f"AUTHOR: {raw_data['author']}")
+        if raw_data.get('group'):
+            content_parts.append(f"GROUP: {raw_data['group']}")
+
+        if raw_data.get('replies'):
+            content_parts.append(f"\nREPLIES ({raw_data.get('reply_count', 0)}):")
+            for i, reply in enumerate(raw_data['replies'][:10], 1):
+                content_parts.append(f"\n{i}. {reply.get('author', 'anonymous')}:")
+                content_parts.append(f"   {reply.get('content', '')[:500]}")
+
+        content = "\n\n".join(content_parts)
+
+        summary = raw_data.get('title', '')
+        if raw_data.get('content'):
+            summary += f" - {raw_data['content'][:200]}"
+        summary = summary[:500]
+
+        source_updated_at = None
+        posted_date = None
+        if raw_data.get('date'):
+            try:
+                date_str = raw_data['date'].split('T')[0].split('.')[0]
+                source_updated_at = datetime.fromisoformat(date_str)
+                posted_date = source_updated_at.strftime("%Y-%m-%d")
+            except:
+                pass
+
+        metadata = {
+            'community': raw_data.get('group', 'Inspire'),
+            'author': raw_data.get('author', 'anonymous'),
+            'reply_count': raw_data.get('reply_count', 0),
+            'posted_date': posted_date,
+        }
+
+        return DocumentCreate(
+            source_id=self.source_id,
+            external_id=external_id,
+            url=url,
+            title=raw_data.get('title', 'Untitled'),
+            content=content,
+            summary=summary,
+            metadata=metadata
+        ), source_updated_at

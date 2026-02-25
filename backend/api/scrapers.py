@@ -28,6 +28,10 @@ from scrapers.openfda import OpenFDAScraper
 from scrapers.who_don import WHODiseaseOutbreakNewsScraper
 from scrapers.semantic_scholar import SemanticScholarScraper
 from scrapers.drugscom import DrugsComScraper
+from scrapers.reddit_search import RedditSearchScraper
+from scrapers.bensfriends import BensFriendsScraper
+from scrapers.myhealthteam import MyHealthTeamScraper
+from scrapers.inspire import InspireScraper
 
 router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
 
@@ -129,6 +133,15 @@ async def trigger_scrape(
         "semanticscholar": SemanticScholarScraper,
         "drugs.com": DrugsComScraper,
         "drugscom": DrugsComScraper,
+        "reddit search": RedditSearchScraper,
+        "redditsearch": RedditSearchScraper,
+        "ben's friends": BensFriendsScraper,
+        "bensfriends": BensFriendsScraper,
+        "bens friends": BensFriendsScraper,
+        "myhealthteam": MyHealthTeamScraper,
+        "my health team": MyHealthTeamScraper,
+        "inspire": InspireScraper,
+        "inspire.com": InspireScraper,
     }
 
     if source_name_lower not in scraper_map:
