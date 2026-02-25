@@ -28,7 +28,7 @@ class DrugsComScraper(BaseScraper):
             return []
 
         # Keep 100 cap per run since Playwright is slow, but resumable
-        max_results = kwargs.get('max_results') or 100
+        max_results = kwargs.get('max_results')
 
         # Load cursor
         cursor = await self.get_cursor(disease_term)

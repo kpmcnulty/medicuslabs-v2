@@ -39,7 +39,7 @@ class InspireScraper(BaseScraper):
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         """Search Inspire with cursor-based resume. Browser-based so keeps reasonable limits."""
-        max_results = kwargs.get('max_results') or 50  # Keep reasonable for Playwright
+        max_results = kwargs.get('max_results')
         
         # Load cursor
         cursor = await self.get_cursor(disease_term)
