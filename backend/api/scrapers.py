@@ -32,6 +32,8 @@ from scrapers.reddit_search import RedditSearchScraper
 from scrapers.bensfriends import BensFriendsScraper
 from scrapers.myhealthteam import MyHealthTeamScraper
 from scrapers.inspire import InspireScraper
+from scrapers.pullpush import PullpushScraper
+from scrapers.patientinfo import PatientInfoScraper
 
 router = APIRouter(prefix="/api/scrapers", tags=["scrapers"])
 
@@ -142,6 +144,12 @@ async def trigger_scrape(
         "my health team": MyHealthTeamScraper,
         "inspire": InspireScraper,
         "inspire.com": InspireScraper,
+        "pullpush": PullpushScraper,
+        "pullpush reddit": PullpushScraper,
+        "pullpush.io": PullpushScraper,
+        "patient.info": PatientInfoScraper,
+        "patientinfo": PatientInfoScraper,
+        "patient.info forums": PatientInfoScraper,
     }
 
     if source_name_lower not in scraper_map:
