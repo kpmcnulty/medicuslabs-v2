@@ -1,4 +1,4 @@
-"""Ben's Friends Discourse forum scraper.
+"""Ben's Friends Discourse forum scraper with cursor-based resume.
 Ben's Friends runs rare disease community forums on Discourse.
 Uses the public Discourse JSON API to fetch posts and topics.
 """
@@ -6,19 +6,14 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from loguru import logger
 from urllib.parse import quote_plus
+import re
 
 from .base import BaseScraper
 from models.schemas import DocumentCreate
 
 
-# Ben's Friends Discourse sites with public APIs
 BENSFRIENDS_SITES = [
     {"slug": "rarediseases", "url": "https://rarediseases.bensfriends.org", "name": "Rare Diseases Hub"},
-]
-
-# Additional community Discourse sites (tested for API access)
-DISCOURSE_COMMUNITIES = [
-    # Add more Discourse-based health forums here as they're discovered
 ]
 
 
@@ -29,22 +24,32 @@ class BensFriendsScraper(BaseScraper):
         super().__init__(
             source_id=source_id or 0,
             source_name="Ben's Friends",
-            rate_limit=1.0  # Be respectful
+            rate_limit=1.0
         )
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
-        """Search Ben's Friends Discourse forums for disease-related topics"""
+        """Search Ben's Friends forums with cursor-based resume"""
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results')
-        logger.info(f"Searching Ben's Friends for: {disease_term}")
+        max_results = kwargs.get('max_results')  # None = unlimited
+        
+        # Load cursor
+        cursor = await self.get_cursor(disease_term)
+        saved_page = cursor.get('page', 0)
+        exhausted = cursor.get('exhausted', False)
+
+        if exhausted:
+            # Incremental: re-check search results for new content
+            logger.info(f"Ben's Friends: Exhausted for '{disease_term}', running search for new content")
+            saved_page = 0
+
+        logger.info(f"Searching Ben's Friends for: {disease_term} (page {saved_page})")
 
         results = []
 
         for site in BENSFRIENDS_SITES:
             try:
-                # Search the Discourse API
                 site_results = await self._search_discourse(
                     site['url'], site['name'], disease_term, max_results
                 )
@@ -52,13 +57,13 @@ class BensFriendsScraper(BaseScraper):
             except Exception as e:
                 logger.warning(f"Error searching {site['name']}: {e}")
 
-        # Also fetch latest/top topics from each site (not just search matches)
+        # Fetch latest/top topics with pagination resume
         for site in BENSFRIENDS_SITES:
             try:
                 latest = await self._fetch_latest_topics(
-                    site['url'], site['name'], max_results=50
+                    site['url'], site['name'], disease_term, 
+                    max_results=max_results, start_page=saved_page
                 )
-                # Add topics we haven't seen
                 seen_ids = {r.get('topic_id') for r in results}
                 for topic in latest:
                     if topic.get('topic_id') not in seen_ids:
@@ -67,7 +72,9 @@ class BensFriendsScraper(BaseScraper):
                 logger.debug(f"Error fetching latest from {site['name']}: {e}")
 
         logger.info(f"Found {len(results)} topics from Ben's Friends for '{disease_term}'")
-        return results[:max_results]
+        if max_results:
+            return results[:max_results]
+        return results
 
     async def _search_discourse(self, base_url: str, site_name: str,
                                  query: str, max_results: int) -> List[Dict[str, Any]]:
@@ -82,18 +89,16 @@ class BensFriendsScraper(BaseScraper):
                 timeout=15
             )
             if response.status_code != 200:
-                logger.debug(f"Discourse search returned {response.status_code} for {base_url}")
                 return []
 
             data = response.json()
             topics = {t['id']: t for t in data.get('topics', [])}
             posts = data.get('posts', [])
 
-            for post in posts[:max_results]:
+            limit = max_results if max_results else len(posts)
+            for post in posts[:limit]:
                 topic_id = post.get('topic_id')
                 topic = topics.get(topic_id, {})
-
-                # Fetch full topic with replies
                 full_topic = await self._fetch_topic(base_url, topic_id)
 
                 results.append({
@@ -141,10 +146,8 @@ class BensFriendsScraper(BaseScraper):
             content = ''
             replies = []
 
-            for i, post in enumerate(posts[:20]):  # Limit to 20 posts per topic
-                post_content = post.get('cooked', '')  # HTML content
-                # Strip HTML tags for plain text
-                import re
+            for i, post in enumerate(posts[:20]):
+                post_content = post.get('cooked', '')
                 plain_text = re.sub(r'<[^>]+>', ' ', post_content).strip()
                 plain_text = re.sub(r'\s+', ' ', plain_text)
 
@@ -169,10 +172,12 @@ class BensFriendsScraper(BaseScraper):
             return None
 
     async def _fetch_latest_topics(self, base_url: str, site_name: str,
-                                    max_results: int = 300) -> List[Dict[str, Any]]:
-        """Fetch latest topics from a Discourse forum with pagination"""
+                                    disease_term: str,
+                                    max_results: int = None,
+                                    start_page: int = 0) -> List[Dict[str, Any]]:
+        """Fetch latest topics with pagination and cursor save"""
         results = []
-        page = 0
+        page = start_page
 
         try:
             while max_results is None or len(results) < max_results:
@@ -190,6 +195,7 @@ class BensFriendsScraper(BaseScraper):
                 topics = data.get('topic_list', {}).get('topics', [])
                 
                 if not topics:
+                    await self.mark_exhausted(disease_term)
                     break
                     
                 more = data.get('topic_list', {}).get('more_topics_url', '')
@@ -222,11 +228,17 @@ class BensFriendsScraper(BaseScraper):
                         break
 
                 page += 1
+                # Save cursor after each page
+                await self.save_cursor(disease_term, page=page)
+
                 if not more:
+                    await self.mark_exhausted(disease_term)
                     break
 
         except Exception as e:
             logger.warning(f"Error fetching latest from {base_url}: {e}")
+            # Save cursor on error
+            await self.save_cursor(disease_term, page=page)
 
         return results
 
@@ -239,19 +251,15 @@ class BensFriendsScraper(BaseScraper):
         content_parts = []
         if raw_data.get('title'):
             content_parts.append(f"TITLE: {raw_data['title']}")
-        
-        # Use full content if available, else blurb
         main_content = raw_data.get('full_content') or raw_data.get('content', '')
         if main_content:
             content_parts.append(f"CONTENT: {main_content}")
-
         if raw_data.get('author'):
             content_parts.append(f"AUTHOR: {raw_data['author']}")
         if raw_data.get('site_name'):
             content_parts.append(f"COMMUNITY: {raw_data['site_name']}")
         if raw_data.get('tags'):
             content_parts.append(f"TAGS: {', '.join(raw_data['tags'])}")
-
         content_parts.append(f"VIEWS: {raw_data.get('views', 0)} | REPLIES: {raw_data.get('reply_count', 0)}")
 
         if raw_data.get('replies'):
@@ -261,7 +269,6 @@ class BensFriendsScraper(BaseScraper):
                 content_parts.append(f"   {reply.get('content', '')[:1000]}")
 
         content = "\n\n".join(content_parts)
-
         summary = raw_data.get('title', '')
         if main_content:
             summary += f" - {main_content[:200]}"

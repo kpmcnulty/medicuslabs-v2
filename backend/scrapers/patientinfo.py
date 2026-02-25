@@ -7,7 +7,7 @@ from models.schemas import DocumentCreate
 
 
 class PatientInfoScraper(BaseScraper):
-    """Scraper for Patient.info community forums (Discourse-based)"""
+    """Scraper for Patient.info community forums (Discourse-based) with cursor-based resume"""
 
     def __init__(self, source_id: int = None):
         super().__init__(
@@ -21,9 +21,19 @@ class PatientInfoScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results')
+        max_results = kwargs.get('max_results')  # None = unlimited
+
+        # Load cursor
+        cursor = await self.get_cursor(disease_term)
+        saved_page = cursor.get('page', 1)
+        exhausted = cursor.get('exhausted', False)
+
+        if exhausted:
+            logger.info(f"Patient.info: Exhausted for '{disease_term}', running incremental")
+            saved_page = 1
+
         results = []
-        page = 1
+        page = saved_page
 
         while max_results is None or len(results) < max_results:
             params = {'q': disease_term, 'page': page}
@@ -33,9 +43,9 @@ class PatientInfoScraper(BaseScraper):
                 posts = data.get('posts', [])
 
                 if not topics:
+                    await self.mark_exhausted(disease_term)
                     break
 
-                # Build post lookup by topic
                 post_by_topic = {}
                 for p in posts:
                     tid = p.get('topic_id')
@@ -44,23 +54,28 @@ class PatientInfoScraper(BaseScraper):
 
                 for topic in topics:
                     topic_id = topic.get('id')
-                    # Merge first matching post content
                     if topic_id in post_by_topic:
                         topic['first_post'] = post_by_topic[topic_id]
                     results.append(topic)
 
-                # Check if more pages
                 grouped = data.get('grouped_search_result', {})
                 if not grouped.get('more_full_page_results'):
+                    await self.mark_exhausted(disease_term)
                     break
+
                 page += 1
+                # Save cursor after each page
+                await self.save_cursor(disease_term, page=page)
 
             except Exception as e:
                 logger.error(f"Patient.info search error: {e}")
+                await self.save_cursor(disease_term, page=page)
                 break
 
         logger.info(f"Found {len(results)} topics on Patient.info for '{disease_term}'")
-        return results[:max_results]
+        if max_results:
+            return results[:max_results]
+        return results
 
     async def fetch_details(self, external_id: str) -> Dict[str, Any]:
         return {}
@@ -70,17 +85,13 @@ class PatientInfoScraper(BaseScraper):
         title = raw_data.get('title', 'Untitled')
         slug = raw_data.get('slug', '')
         posts_count = raw_data.get('posts_count', 0)
-        reply_count = raw_data.get('reply_count', 0)
 
-        # Get first post content
         first_post = raw_data.get('first_post', {})
         blurb = first_post.get('blurb', '')
         author = first_post.get('username', 'anonymous')
 
-        # Tags
         tags = [t.get('name', '') for t in raw_data.get('tags', []) if isinstance(t, dict)]
 
-        # Build content
         parts = [f"TOPIC: {title}"]
         if tags:
             parts.append(f"Tags: {', '.join(tags)}")
@@ -91,7 +102,6 @@ class PatientInfoScraper(BaseScraper):
         content = "\n\n".join(parts)
         summary = f"{title[:300]}"
 
-        # Parse dates
         source_updated_at = None
         posted_date = None
         created = raw_data.get('created_at') or (first_post.get('created_at') if first_post else None)
@@ -114,19 +124,15 @@ class PatientInfoScraper(BaseScraper):
         url = f"{self.base_url}/t/{slug}/{topic_id}"
 
         metadata = {
-            'community': 'Patient.info',
-            'author': author,
+            'community': 'Patient.info', 'author': author,
             'reply_count': max(0, posts_count - 1),
-            'posted_date': posted_date,
-            'tags': tags,
+            'posted_date': posted_date, 'tags': tags,
         }
 
         return DocumentCreate(
             source_id=self.source_id,
             external_id=f"patientinfo_{topic_id}",
-            url=url,
-            title=title[:500],
-            content=content,
-            summary=summary[:500],
+            url=url, title=title[:500],
+            content=content, summary=summary[:500],
             metadata=metadata
         ), source_updated_at

@@ -8,7 +8,7 @@ from models.schemas import DocumentCreate
 
 
 class SemanticScholarScraper(BaseScraper):
-    """Scraper for Semantic Scholar academic paper search API"""
+    """Scraper for Semantic Scholar with cursor-based resume"""
 
     API_BASE = "https://api.semanticscholar.org/graph/v1"
     FIELDS = "title,abstract,authors,year,citationCount,journal,externalIds,url,publicationDate"
@@ -17,19 +17,30 @@ class SemanticScholarScraper(BaseScraper):
         super().__init__(
             source_id=source_id or 0,
             source_name="Semantic Scholar",
-            rate_limit=1.0  # 100 req/5min without key
+            rate_limit=1.0
         )
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results') or 500
-        results = []
-        offset = 0
-        limit = min(100, max_results)  # API max is 100 per request
+        max_results = kwargs.get('max_results')  # None = unlimited
 
-        while offset < max_results:
+        # Load cursor
+        cursor = await self.get_cursor(disease_term)
+        saved_offset = cursor.get('offset', 0)
+        exhausted = cursor.get('exhausted', False)
+        newest_seen = cursor.get('newest_seen')
+
+        if exhausted:
+            logger.info(f"Semantic Scholar: Exhausted for '{disease_term}', incremental")
+            saved_offset = 0  # Re-scan from start, dedup handled by document store
+
+        results = []
+        offset = saved_offset
+        limit = 100  # API max per request
+
+        while max_results is None or len(results) < max_results:
             await self.rate_limiter.acquire()
             url = (
                 f"{self.API_BASE}/paper/search"
@@ -41,26 +52,38 @@ class SemanticScholarScraper(BaseScraper):
             try:
                 response = await self.client.get(url)
                 if response.status_code == 429:
-                    logger.warning("Semantic Scholar rate limited, stopping")
+                    logger.warning("Semantic Scholar rate limited, saving cursor and stopping")
+                    await self.save_cursor(disease_term, offset=offset, newest_seen=newest_seen)
                     break
                 response.raise_for_status()
                 data = response.json()
 
                 papers = data.get('data', [])
                 if not papers:
+                    await self.mark_exhausted(disease_term)
                     break
 
                 for paper in papers:
-                    if paper.get('abstract'):  # Skip papers without abstracts
+                    if paper.get('abstract'):
                         results.append(paper)
+                        # Track newest
+                        pub_date = paper.get('publicationDate')
+                        if pub_date and (not newest_seen or pub_date > newest_seen):
+                            newest_seen = pub_date
 
                 total = data.get('total', 0)
                 offset += limit
+
+                # Save cursor after each page
+                await self.save_cursor(disease_term, offset=offset, newest_seen=newest_seen)
+
                 if offset >= total:
+                    await self.mark_exhausted(disease_term)
                     break
 
             except Exception as e:
                 logger.error(f"Semantic Scholar search error for '{disease_term}': {e}")
+                await self.save_cursor(disease_term, offset=offset, newest_seen=newest_seen)
                 break
 
         logger.info(f"Found {len(results)} papers for '{disease_term}' from Semantic Scholar")
@@ -74,10 +97,8 @@ class SemanticScholarScraper(BaseScraper):
         title = raw_data.get('title', 'Untitled')
         abstract = raw_data.get('abstract', '')
         
-        # Build author list
         authors = [a.get('name', '') for a in raw_data.get('authors', []) if a.get('name')]
         
-        # Parse date
         source_updated_at = None
         pub_date = raw_data.get('publicationDate')
         if pub_date:
@@ -91,20 +112,16 @@ class SemanticScholarScraper(BaseScraper):
             except (ValueError, TypeError):
                 pass
 
-        # External IDs
         ext_ids = raw_data.get('externalIds') or {}
         doi = ext_ids.get('DOI', '')
         
-        # Journal
         journal = raw_data.get('journal', {})
         journal_name = journal.get('name', '') if isinstance(journal, dict) else ''
 
         metadata = {
-            'authors': authors,
-            'year': raw_data.get('year'),
+            'authors': authors, 'year': raw_data.get('year'),
             'citation_count': raw_data.get('citationCount', 0),
-            'journal': journal_name,
-            'doi': doi,
+            'journal': journal_name, 'doi': doi,
             'arxiv_id': ext_ids.get('ArXiv', ''),
             'pmid': ext_ids.get('PubMed', ''),
             'publication_date': pub_date,
@@ -118,9 +135,7 @@ class SemanticScholarScraper(BaseScraper):
         return DocumentCreate(
             source_id=self.source_id,
             external_id=f"s2_{paper_id}",
-            url=url,
-            title=title,
-            content=abstract,
+            url=url, title=title, content=abstract,
             summary=abstract[:500] if abstract else title,
             metadata=metadata
         ), source_updated_at

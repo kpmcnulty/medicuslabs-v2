@@ -1,6 +1,9 @@
-"""Reddit cross-subreddit search scraper.
-Searches all of Reddit for disease terms, not just specific subreddits.
-Uses PRAW's subreddit('all').search() to find relevant posts across all communities.
+"""Reddit cross-subreddit search scraper with cursor-based resume.
+Searches all of Reddit for disease terms.
+
+Note: Reddit's API hard-caps at ~1000 results per search query.
+We use multiple sort/time combinations to maximize coverage, but
+total unique results are still limited by Reddit.
 """
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
@@ -13,13 +16,13 @@ from core.config import settings
 
 
 class RedditSearchScraper(BaseScraper):
-    """Search ALL of Reddit for disease-related posts"""
+    """Search ALL of Reddit with cursor-based resume"""
 
     def __init__(self, source_id: int = None):
         super().__init__(
             source_id=source_id or 0,
             source_name="Reddit Search",
-            rate_limit=60.0  # Reddit allows 60 req/min
+            rate_limit=60.0
         )
         self.client_id = settings.reddit_client_id or ''
         self.client_secret = settings.reddit_client_secret or ''
@@ -33,34 +36,50 @@ class RedditSearchScraper(BaseScraper):
             )
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
-        """Search all of Reddit for disease-related posts"""
+        """Search all of Reddit with cursor-based resume.
+        
+        Reddit API hard-caps at ~1000 per listing. We try multiple sort/time
+        combos and save cursor for incremental.
+        """
         if not self.reddit:
             logger.error("Reddit API credentials not configured")
             return []
 
-        max_results = kwargs.get('max_results') or 1000
+        max_results = kwargs.get('max_results')  # None = unlimited (up to Reddit's ~1000 cap per combo)
         include_comments = kwargs.get('include_comments', True)
         comment_limit = kwargs.get('comment_limit', 10)
 
-        logger.info(f"Searching all of Reddit for: {disease_term} (max {max_results})")
+        # Load cursor
+        cursor = await self.get_cursor(disease_term)
+        newest_seen_utc = cursor.get('newest_seen_utc')
+        exhausted = cursor.get('exhausted', False)
+        completed_combos = cursor.get('completed_combos', [])
+
+        if exhausted:
+            logger.info(f"Reddit Search: Exhausted for '{disease_term}', incremental mode")
+            completed_combos = []  # Reset combos for fresh incremental run
+
+        logger.info(f"Searching all of Reddit for: {disease_term}")
 
         results = []
         seen_ids = set()
 
-        # Search with multiple sort strategies for broader coverage
         sort_options = ['relevance', 'new', 'top', 'comments']
         time_filters = ['month', 'year', 'all']
 
         for sort in sort_options:
             for time_filter in time_filters:
-                if len(results) >= max_results:
+                combo_key = f"{sort}_{time_filter}"
+                if combo_key in completed_combos:
+                    continue
+
+                if max_results is not None and len(results) >= max_results:
                     break
+
                 try:
-                    remaining = max_results - len(results)
+                    remaining = (max_results - len(results)) if max_results else 1000
                     submissions = self.reddit.subreddit('all').search(
-                        disease_term,
-                        sort=sort,
-                        time_filter=time_filter,
+                        disease_term, sort=sort, time_filter=time_filter,
                         limit=min(remaining, 100)
                     )
 
@@ -69,9 +88,12 @@ class RedditSearchScraper(BaseScraper):
                             continue
                         seen_ids.add(submission.id)
 
-                        # Skip very low quality posts
                         if submission.score < 2 and submission.num_comments < 2:
                             continue
+
+                        # Track newest
+                        if not newest_seen_utc or submission.created_utc > newest_seen_utc:
+                            newest_seen_utc = submission.created_utc
 
                         post_data = {
                             'post_id': submission.id,
@@ -89,7 +111,6 @@ class RedditSearchScraper(BaseScraper):
                             'top_replies': []
                         }
 
-                        # Fetch top comments
                         if include_comments and submission.num_comments > 0:
                             try:
                                 submission.comment_sort = 'best'
@@ -106,15 +127,27 @@ class RedditSearchScraper(BaseScraper):
                                 logger.debug(f"Error fetching comments for {submission.id}: {e}")
 
                         results.append(post_data)
-
-                        if len(results) >= max_results:
+                        if max_results is not None and len(results) >= max_results:
                             break
+
+                    # Mark this combo as done
+                    completed_combos.append(combo_key)
+                    await self.save_cursor(disease_term, newest_seen_utc=newest_seen_utc,
+                                          completed_combos=completed_combos)
 
                 except Exception as e:
                     logger.warning(f"Error searching Reddit ({sort}/{time_filter}): {e}")
+                    await self.save_cursor(disease_term, newest_seen_utc=newest_seen_utc,
+                                          completed_combos=completed_combos)
 
-            if len(results) >= max_results:
+            if max_results is not None and len(results) >= max_results:
                 break
+
+        # Mark exhausted after all combos
+        await self.save_cursor(disease_term, newest_seen_utc=newest_seen_utc,
+                              completed_combos=completed_combos)
+        if len(completed_combos) >= len(sort_options) * len(time_filters):
+            await self.mark_exhausted(disease_term)
 
         logger.info(f"Found {len(results)} posts across Reddit for '{disease_term}' "
                     f"from {len(set(r['subreddit'] for r in results))} subreddits")
@@ -133,7 +166,6 @@ class RedditSearchScraper(BaseScraper):
             content_parts.append(f"CONTENT: {raw_data['content']}")
         if raw_data.get('subreddit'):
             content_parts.append(f"SUBREDDIT: r/{raw_data['subreddit']}")
-
         content_parts.append(f"SCORE: {raw_data.get('score', 0)} | COMMENTS: {raw_data.get('num_comments', 0)}")
 
         if raw_data.get('top_replies'):
@@ -143,7 +175,6 @@ class RedditSearchScraper(BaseScraper):
                 content_parts.append(f"   {reply['body'][:1000]}")
 
         content = "\n\n".join(content_parts)
-
         summary = raw_data.get('title', '')
         if raw_data.get('content'):
             summary += f" - {raw_data['content'][:200]}"
@@ -171,7 +202,5 @@ class RedditSearchScraper(BaseScraper):
             external_id=f"reddit_search_{post_id}",
             url=raw_data.get('url', ''),
             title=raw_data.get('title', 'Untitled'),
-            content=content,
-            summary=summary,
-            metadata=metadata
+            content=content, summary=summary, metadata=metadata
         ), source_updated_at

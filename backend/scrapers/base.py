@@ -119,6 +119,52 @@ class BaseScraper(ABC):
             await self._playwright.stop()
             self._playwright = None
     
+    # ── Cursor / Resume helpers ──────────────────────────────────────
+    
+    def _disease_key(self, disease_term: str) -> str:
+        """Normalize disease term to a crawl_state key"""
+        return disease_term.lower().replace(' ', '_').replace('-', '_').replace("'", '')
+
+    async def get_cursor(self, disease_term: str) -> Dict[str, Any]:
+        """Get saved cursor state for a disease. Returns dict with keys like:
+        offset, page, oldest_seen, newest_seen, exhausted, etc."""
+        key = self._disease_key(disease_term)
+        try:
+            state = await self.get_source_state()
+            crawl_state = state.get('crawl_state', {})
+            if isinstance(crawl_state, str):
+                crawl_state = json.loads(crawl_state)
+            return crawl_state.get(key, {})
+        except Exception:
+            return {}
+
+    async def save_cursor(self, disease_term: str, **updates):
+        """Save cursor state for a disease. Merges with existing state.
+        Call after each batch so interrupted runs can resume."""
+        key = self._disease_key(disease_term)
+        try:
+            state = await self.get_source_state()
+            crawl_state = state.get('crawl_state', {})
+            if isinstance(crawl_state, str):
+                crawl_state = json.loads(crawl_state)
+            if key not in crawl_state:
+                crawl_state[key] = {}
+            crawl_state[key].update(updates)
+            await self.update_source_state(crawl_state=crawl_state)
+        except Exception as e:
+            logger.debug(f"Could not save cursor for {self.source_name}/{key}: {e}")
+
+    async def is_exhausted(self, disease_term: str) -> bool:
+        """Check if historical scrape is complete for this disease"""
+        cursor = await self.get_cursor(disease_term)
+        return cursor.get('exhausted', False)
+
+    async def mark_exhausted(self, disease_term: str):
+        """Mark historical scrape as complete for this disease"""
+        await self.save_cursor(disease_term, exhausted=True)
+
+    # ── Abstract methods ──────────────────────────────────────────
+
     @abstractmethod
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
         """Search for documents related to a disease term"""

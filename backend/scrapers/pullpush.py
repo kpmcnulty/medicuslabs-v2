@@ -6,17 +6,10 @@ Strategy:
 - Subsequent runs: picks up where it left off, continuing backwards
 - Once historical is exhausted, switches to forward/incremental mode
 - No artificial caps — gets everything over time
-
-Uses crawl_state JSONB on the sources table:
-  {
-    "multiple_sclerosis": {"oldest_seen": 1234567890, "newest_seen": 1234567890, "exhausted": false},
-    ...
-  }
 """
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from loguru import logger
-import json
 
 from .base import BaseScraper
 from models.schemas import DocumentCreate
@@ -38,41 +31,41 @@ class PullpushScraper(BaseScraper):
         if not disease_term:
             return []
 
-        disease_key = disease_term.lower().replace(' ', '_').replace('-', '_')
-        
-        # Load cursor state
-        state = await self._get_disease_state(disease_key)
-        oldest_seen = state.get('oldest_seen')
-        newest_seen = state.get('newest_seen')
-        exhausted = state.get('exhausted', False)
+        max_results = kwargs.get('max_results')  # None = unlimited
+
+        # Load cursor state using base class helpers
+        cursor = await self.get_cursor(disease_term)
+        oldest_seen = cursor.get('oldest_seen')
+        newest_seen = cursor.get('newest_seen')
+        exhausted = cursor.get('exhausted', False)
 
         if exhausted:
             # Historical scrape is done — switch to incremental (get new posts)
             logger.info(f"Pullpush: Historical complete for '{disease_term}', running incremental from {datetime.fromtimestamp(newest_seen) if newest_seen else 'now'}")
-            results = await self._scrape_incremental(disease_term, newest_seen)
+            results = await self._scrape_incremental(disease_term, newest_seen, max_results)
         else:
             # Historical scrape — paginate backwards from cursor
             logger.info(f"Pullpush: Historical scrape for '{disease_term}', cursor={'from ' + str(datetime.fromtimestamp(oldest_seen)) if oldest_seen else 'start (latest)'}")
-            results = await self._scrape_historical(disease_term, disease_key, oldest_seen)
+            results = await self._scrape_historical(disease_term, oldest_seen, max_results)
 
         # Update newest_seen for incremental tracking
         if results:
             max_ts = max(r.get('created_utc', 0) for r in results)
             if not newest_seen or max_ts > newest_seen:
-                await self._update_disease_state(disease_key, newest_seen=max_ts)
+                await self.save_cursor(disease_term, newest_seen=max_ts)
 
         logger.info(f"Pullpush: Got {len(results)} posts for '{disease_term}'")
         return results
 
-    async def _scrape_historical(self, disease_term: str, disease_key: str, 
-                                  cursor_before: int = None) -> List[Dict[str, Any]]:
+    async def _scrape_historical(self, disease_term: str, cursor_before: int = None,
+                                  max_results: int = None) -> List[Dict[str, Any]]:
         """Paginate backwards through all history. Saves cursor after each batch."""
         results = []
         current_before = cursor_before
         empty_pages = 0
         batch_num = 0
 
-        while True:
+        while max_results is None or len(results) < max_results:
             batch_num += 1
             params = {
                 'q': f'"{disease_term}"',
@@ -91,7 +84,7 @@ class PullpushScraper(BaseScraper):
                     if empty_pages >= 3:
                         # We've exhausted this source
                         logger.info(f"Pullpush: Historical scrape exhausted for '{disease_term}' after {len(results)} posts")
-                        await self._update_disease_state(disease_key, exhausted=True)
+                        await self.mark_exhausted(disease_term)
                         break
                     continue
 
@@ -111,7 +104,7 @@ class PullpushScraper(BaseScraper):
                 current_before = oldest_ts
 
                 # Save cursor after every batch so we can resume
-                await self._update_disease_state(disease_key, oldest_seen=current_before)
+                await self.save_cursor(disease_term, oldest_seen=current_before)
 
                 if batch_num % 10 == 0:
                     oldest_date = datetime.fromtimestamp(current_before) if current_before else None
@@ -120,19 +113,20 @@ class PullpushScraper(BaseScraper):
                 if len(items) < 100:
                     # Last page
                     logger.info(f"Pullpush: Reached end of history for '{disease_term}'")
-                    await self._update_disease_state(disease_key, exhausted=True)
+                    await self.mark_exhausted(disease_term)
                     break
 
             except Exception as e:
                 logger.error(f"Pullpush error at batch {batch_num}: {e}")
                 # Save cursor so we resume from here next time
                 if current_before:
-                    await self._update_disease_state(disease_key, oldest_seen=current_before)
+                    await self.save_cursor(disease_term, oldest_seen=current_before)
                 break
 
         return results
 
-    async def _scrape_incremental(self, disease_term: str, after_ts: int = None) -> List[Dict[str, Any]]:
+    async def _scrape_incremental(self, disease_term: str, after_ts: int = None,
+                                   max_results: int = None) -> List[Dict[str, Any]]:
         """Get new posts since last scrape."""
         results = []
         params = {
@@ -144,7 +138,7 @@ class PullpushScraper(BaseScraper):
             params['after'] = int(after_ts)
 
         # Paginate forward through new posts
-        while True:
+        while max_results is None or len(results) < max_results:
             try:
                 data = await self.make_request(f"{self.base_url}/search/submission", params=params)
                 items = data.get('data', [])
@@ -169,33 +163,6 @@ class PullpushScraper(BaseScraper):
                 break
 
         return results
-
-    async def _get_disease_state(self, disease_key: str) -> Dict:
-        """Get crawl state for a specific disease"""
-        try:
-            state = await self.get_source_state()
-            crawl_state = state.get('crawl_state', {})
-            if isinstance(crawl_state, str):
-                crawl_state = json.loads(crawl_state)
-            return crawl_state.get(disease_key, {})
-        except Exception:
-            return {}
-
-    async def _update_disease_state(self, disease_key: str, **updates):
-        """Update crawl state for a specific disease"""
-        try:
-            state = await self.get_source_state()
-            crawl_state = state.get('crawl_state', {})
-            if isinstance(crawl_state, str):
-                crawl_state = json.loads(crawl_state)
-            
-            if disease_key not in crawl_state:
-                crawl_state[disease_key] = {}
-            crawl_state[disease_key].update(updates)
-            
-            await self.update_source_state(crawl_state=crawl_state)
-        except Exception as e:
-            logger.debug(f"Could not save crawl state for {disease_key}: {e}")
 
     async def _fetch_comments_batch(self, submissions: List[Dict]):
         """Fetch top comments for submissions"""

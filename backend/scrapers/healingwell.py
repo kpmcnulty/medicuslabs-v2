@@ -8,17 +8,16 @@ from models.schemas import DocumentCreate
 
 
 class HealingWellScraper(BaseScraper):
-    """Scraper for HealingWell.com community forums (HTML-based)"""
+    """Scraper for HealingWell.com community forums with cursor-based resume"""
 
-    # Map disease terms to HealingWell forum IDs
     FORUM_MAP = {
         'multiple sclerosis': 17,
-        'als': 9,  # ALS/Lou Gehrig's
+        'als': 9,
         'amyotrophic lateral sclerosis': 9,
-        'leukemia': 14,  # Blood disorders/Leukemia
+        'leukemia': 14,
         'aml': 14,
-        'fabry': None,  # No specific forum
-        'pku': None,  # No specific forum
+        'fabry': None,
+        'pku': None,
         'phenylketonuria': None,
     }
 
@@ -26,7 +25,7 @@ class HealingWellScraper(BaseScraper):
         super().__init__(
             source_id=source_id or 0,
             source_name="HealingWell",
-            rate_limit=0.5  # Be gentle
+            rate_limit=0.5
         )
         self.base_url = "https://www.healingwell.com/community"
 
@@ -34,9 +33,8 @@ class HealingWellScraper(BaseScraper):
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results')
+        max_results = kwargs.get('max_results')  # None = unlimited
         
-        # Find matching forum ID
         term_lower = disease_term.lower()
         forum_id = None
         for key, fid in self.FORUM_MAP.items():
@@ -48,26 +46,34 @@ class HealingWellScraper(BaseScraper):
             logger.info(f"No HealingWell forum mapping for '{disease_term}'")
             return []
 
+        # Load cursor
+        cursor = await self.get_cursor(disease_term)
+        saved_page = cursor.get('page', 1)
+        exhausted = cursor.get('exhausted', False)
+
+        if exhausted:
+            logger.info(f"HealingWell: Exhausted for '{disease_term}', checking for new content")
+            saved_page = 1
+
         results = []
-        page = 1
+        page = saved_page
 
         while max_results is None or len(results) < max_results:
             url = f"{self.base_url}/default.aspx?f={forum_id}&p={page}"
             try:
                 html = await self.fetch_with_browser(url, wait_ms=3000)
                 if not html:
+                    await self.mark_exhausted(disease_term)
                     break
 
-                # Parse forum titles and links
-                # Pattern: <a class="forum-title" href="...">Title</a>
                 title_pattern = r'<a\s+class="forum-title"\s+href="([^"]+)"[^>]*>([^<]+)</a>'
                 matches = re.findall(title_pattern, html)
 
                 if not matches:
+                    await self.mark_exhausted(disease_term)
                     break
 
                 for href, title in matches:
-                    # Extract message ID from URL (e.g., default.aspx?f=17&m=4350040)
                     m_match = re.search(r'm=(\d+)', href)
                     msg_id = m_match.group(1) if m_match else str(hash(href))
 
@@ -80,15 +86,22 @@ class HealingWellScraper(BaseScraper):
                     })
 
                 page += 1
-                if len(matches) < 10:  # Likely last page
+                # Save cursor after each page
+                await self.save_cursor(disease_term, page=page)
+
+                if len(matches) < 10:
+                    await self.mark_exhausted(disease_term)
                     break
 
             except Exception as e:
                 logger.error(f"HealingWell fetch error page {page}: {e}")
+                await self.save_cursor(disease_term, page=page)
                 break
 
         logger.info(f"Found {len(results)} topics on HealingWell for '{disease_term}'")
-        return results[:max_results]
+        if max_results:
+            return results[:max_results]
+        return results
 
     async def fetch_details(self, external_id: str) -> Dict[str, Any]:
         return {}
@@ -103,19 +116,14 @@ class HealingWellScraper(BaseScraper):
         summary = title[:500]
 
         metadata = {
-            'community': 'HealingWell',
-            'author': 'unknown',
-            'reply_count': 0,
-            'posted_date': None,
+            'community': 'HealingWell', 'author': 'unknown',
+            'reply_count': 0, 'posted_date': None,
             'forum_id': raw_data.get('forum_id'),
         }
 
         return DocumentCreate(
             source_id=self.source_id,
             external_id=f"healingwell_{msg_id}",
-            url=url,
-            title=title[:500],
-            content=content,
-            summary=summary,
-            metadata=metadata
+            url=url, title=title[:500],
+            content=content, summary=summary, metadata=metadata
         ), None

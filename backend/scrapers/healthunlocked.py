@@ -20,28 +20,25 @@ class HealthUnlockedScraper(BaseScraper):
         self.api_url = "https://healthunlocked.com/public/search/posts"
 
     async def search(self, disease_term: str, **kwargs) -> List[Dict[str, Any]]:
-        """Search HealthUnlocked via their public search API with pagination"""
+        """Search HealthUnlocked via their public search API with cursor-based pagination"""
         if not disease_term:
             return []
 
-        max_results = kwargs.get('max_results')
+        max_results = kwargs.get('max_results')  # None = unlimited
         fetch_full = kwargs.get('fetch_full_posts', True)
-        
+
         # Load cursor for resume
-        disease_key = disease_term.lower().replace(' ', '_').replace('-', '_')
-        offset = 0
-        try:
-            state = await self.get_source_state()
-            crawl_state = state.get('crawl_state', {})
-            if isinstance(crawl_state, str):
-                import json as _json
-                crawl_state = _json.loads(crawl_state)
-            saved_offset = crawl_state.get(f'{disease_key}_offset', 0)
-            if saved_offset > 0:
-                offset = saved_offset
-                logger.info(f"HealthUnlocked: Resuming '{disease_term}' from offset {offset}")
-        except Exception:
-            pass
+        cursor = await self.get_cursor(disease_term)
+        offset = cursor.get('offset', 0)
+        newest_seen = cursor.get('newest_seen')
+
+        if cursor.get('exhausted', False):
+            # Incremental mode: reset offset, only get new content
+            logger.info(f"HealthUnlocked: Exhausted for '{disease_term}', running incremental")
+            offset = 0
+
+        if offset > 0:
+            logger.info(f"HealthUnlocked: Resuming '{disease_term}' from offset {offset}")
 
         logger.info(f"Searching HealthUnlocked API for: {disease_term} (offset {offset}, max {max_results})")
 
@@ -70,7 +67,7 @@ class HealthUnlockedScraper(BaseScraper):
                     break
 
                 logger.info(f"HealthUnlocked page {offset // page_size + 1}: "
-                           f"{len(posts)} posts ({len(results)}/{min(total, max_results)} so far)")
+                           f"{len(posts)} posts ({len(results)} so far)")
 
                 for post in posts:
                     if max_results is not None and len(results) >= max_results:
@@ -90,6 +87,12 @@ class HealthUnlockedScraper(BaseScraper):
                         if full_content:
                             content = full_content
 
+                    # Track newest_seen for incremental
+                    post_date = post.get('dateCreated')
+                    if post_date:
+                        if not newest_seen or post_date > newest_seen:
+                            newest_seen = post_date
+
                     results.append({
                         'post_id': str(post_id),
                         'title': post.get('title', 'Untitled'),
@@ -97,30 +100,20 @@ class HealthUnlockedScraper(BaseScraper):
                         'author': author.get('username', 'Anonymous'),
                         'community': community.get('name', ''),
                         'community_slug': community.get('slug', ''),
-                        'date': post.get('dateCreated'),
+                        'date': post_date,
                         'reply_count': post.get('totalResponses', 0),
                         'link': f"{self.base_url}/{community.get('slug', '')}/posts/{post_id}" if community.get('slug') else '',
                     })
 
                 offset += page_size
 
-                # Save cursor so we can resume if interrupted
-                try:
-                    state = await self.get_source_state()
-                    crawl_state = state.get('crawl_state', {})
-                    if isinstance(crawl_state, str):
-                        import json as _json
-                        crawl_state = _json.loads(crawl_state)
-                    crawl_state[f'{disease_key}_offset'] = offset
-                    if offset >= total:
-                        crawl_state[f'{disease_key}_exhausted'] = True
-                    await self.update_source_state(crawl_state=crawl_state)
-                except Exception:
-                    pass
+                # Save cursor after every page so we can resume
+                await self.save_cursor(disease_term, offset=offset, newest_seen=newest_seen)
 
                 # Stop if we've fetched all available
                 if offset >= total:
                     logger.info(f"HealthUnlocked: Exhausted all {total} posts for '{disease_term}'")
+                    await self.mark_exhausted(disease_term)
                     break
 
             logger.info(f"Found {len(results)} posts on HealthUnlocked for '{disease_term}'")
@@ -128,6 +121,8 @@ class HealthUnlockedScraper(BaseScraper):
 
         except Exception as e:
             logger.error(f"Error searching HealthUnlocked for '{disease_term}': {e}")
+            # Save cursor on error so we don't lose progress
+            await self.save_cursor(disease_term, offset=offset, newest_seen=newest_seen)
             return results  # Return what we have so far
 
     async def _fetch_post(self, community_slug: str, post_id: int) -> Optional[str]:
